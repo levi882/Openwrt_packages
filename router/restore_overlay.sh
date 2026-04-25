@@ -96,6 +96,25 @@ sanitize_luci_overlay() {
     rm -rf "$UP/usr/libexec/rpcd/luci"
     rm -f "$UP/etc/config/luci"
     rm -f "$UP/etc/board.json"
+
+    # Old overlay backups may also carry whiteouts/opaque markers that still
+    # hide the ROM's LuCI files after reboot. Remove the common ones too.
+    rm -f "$UP/etc/.wh.board.json"
+    rm -f "$UP/etc/config/.wh.luci"
+    rm -f "$UP/usr/lib/lua/.wh.luci"
+    rm -f "$UP/usr/share/.wh.luci"
+    rm -f "$UP/www/.wh.luci-static"
+    rm -f "$UP/www/cgi-bin/.wh.luci"
+    rm -f "$UP/usr/libexec/rpcd/.wh.luci"
+    rm -f "$UP/usr/share/rpcd/acl.d"/.wh.luci*
+    rm -f "$UP/usr/lib/lua/.wh..wh..opq"
+    rm -f "$UP/usr/share/.wh..wh..opq"
+    rm -f "$UP/www/.wh..wh..opq"
+    rm -f "$UP/www/cgi-bin/.wh..wh..opq"
+    rm -f "$UP/usr/share/rpcd/acl.d/.wh..wh..opq"
+    rm -f "$UP/usr/libexec/rpcd/.wh..wh..opq"
+    rm -f "$UP/etc/.wh..wh..opq"
+    rm -f "$UP/etc/config/.wh..wh..opq"
 }
 
 sanitize_luci_overlay
