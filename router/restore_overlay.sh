@@ -133,7 +133,7 @@ add_myfeed() {
 }
 
 add_nikki_feed_if_needed() {
-    list_has_pkg_pattern '^(nikki|luci-app-nikki|mihomo-meta|mihomo-alpha|luci-i18n-nikki-)' || return 0
+    list_has_pkg_pattern '^(mihomo-meta|mihomo-alpha)' || return 0
 
     [ -f /etc/openwrt_release ] || return 0
     . /etc/openwrt_release

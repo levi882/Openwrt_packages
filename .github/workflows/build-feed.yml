@@ -40,6 +40,8 @@ env:
   LUCI_BANDIX_RELEASE_TAG: v0.12.6
   LUCI_BANDIX_VERSION: 0.12.6-r1
   LUCI_BANDIX_I18N_VERSION: 26.068.39505.1002c41
+  NIKKI_RELEASE_TAG: v1.26.0
+  NIKKI_OPENWRT_RELEASE: 25.12
 
 jobs:
   build:
@@ -72,6 +74,9 @@ jobs:
 
       - name: add Bandix release apks
         run: bash .github/scripts/download-bandix-apks.sh "bin/packages/${OPENWRT_ARCH}/${FEED_NAME}"
+
+      - name: add Nikki release apks
+        run: bash .github/scripts/download-nikki-apks.sh "bin/packages/${OPENWRT_ARCH}/${FEED_NAME}"
 
       - name: cache OpenWrt SDK
         uses: actions/cache@v4

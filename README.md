@@ -22,6 +22,11 @@ The workflow downloads these release APKs and adds them to the same signed feed:
 - `bandix`
 - `luci-app-bandix`
 - `luci-i18n-bandix-zh-cn`
+- `nikki`
+- `luci-app-nikki`
+- `luci-i18n-nikki-ru`
+- `luci-i18n-nikki-zh-cn`
+- `luci-i18n-nikki-zh-tw`
 
 The published repository path is:
 

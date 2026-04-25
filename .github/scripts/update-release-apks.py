@@ -5,6 +5,7 @@ import json
 import os
 import re
 import sys
+import tarfile
 import textwrap
 import urllib.request
 import zipfile
@@ -87,6 +88,12 @@ def update_env(updates):
 def write_script(name, body):
     path = SCRIPT_DIR / name
     path.write_text(textwrap.dedent(body).lstrip(), encoding="utf-8", newline="\n")
+
+
+def workflow_env(name, default):
+    text = WORKFLOW.read_text(encoding="utf-8")
+    match = re.search(rf"^  {re.escape(name)}: (.+)$", text, flags=re.MULTILINE)
+    return match.group(1).strip() if match else default
 
 
 def get_lucky():
@@ -274,6 +281,37 @@ def get_bandix():
         "luci_sha": sha256(download_asset(luci)),
         "i18n_version": i18n_match.group("version"),
         "i18n_sha": sha256(download_asset(i18n)),
+    }
+
+
+def get_nikki():
+    openwrt_release = workflow_env("NIKKI_OPENWRT_RELEASE", "25.12")
+    release = latest_release("morytyann/OpenWrt-nikki")
+    asset, _ = pick_asset(
+        release,
+        rf"nikki_x86_64-openwrt-{re.escape(openwrt_release)}\.tar\.gz",
+        f"Nikki x86_64 OpenWrt {openwrt_release} archive",
+    )
+    archive_data = download_asset(asset)
+
+    apks = {}
+    with tarfile.open(fileobj=io.BytesIO(archive_data), mode="r:gz") as archive:
+        for member in archive.getmembers():
+            if not member.isfile() or not member.name.endswith(".apk"):
+                continue
+            file_obj = archive.extractfile(member)
+            if file_obj is None:
+                continue
+            apks[Path(member.name).name] = sha256(file_obj.read())
+
+    if not apks:
+        raise SystemExit(f"No APK files found in {asset['name']}")
+
+    return {
+        "tag": release["tag_name"],
+        "openwrt_release": openwrt_release,
+        "archive_sha": sha256(archive_data),
+        "apks": dict(sorted(apks.items())),
     }
 
 
@@ -569,6 +607,68 @@ def render_bandix(data):
     )
 
 
+def render_nikki(data):
+    copy_blocks = []
+    for file_name, digest in data["apks"].items():
+        copy_blocks.append(
+            f'''copy_and_check \\
+  "{file_name}" \\
+  "{digest}"'''
+        )
+
+    write_script(
+        "download-nikki-apks.sh",
+        f"""
+        #!/usr/bin/env bash
+        set -euo pipefail
+
+        repo_dir="${{1:?usage: download-nikki-apks.sh <feed-dir>}}"
+        tag="${{NIKKI_RELEASE_TAG:-{data['tag']}}}"
+        openwrt_release="${{NIKKI_OPENWRT_RELEASE:-{data['openwrt_release']}}}"
+        archive="nikki_x86_64-openwrt-${{openwrt_release}}.tar.gz"
+        archive_sha256="{data['archive_sha']}"
+        url="https://github.com/morytyann/OpenWrt-nikki/releases/download/${{tag}}/${{archive}}"
+        tmp_dir="$(mktemp -d)"
+
+        cleanup() {{
+          rm -rf "$tmp_dir"
+        }}
+        trap cleanup EXIT
+
+        mkdir -p "$repo_dir"
+
+        echo "Downloading ${{archive}}"
+        curl -fL --retry 3 --retry-delay 2 -o "${{tmp_dir}}/${{archive}}" "$url"
+
+        (
+          cd "$tmp_dir"
+          printf '%s  %s\\n' "$archive_sha256" "$archive" | sha256sum -c -
+        )
+
+        tar -xzf "${{tmp_dir}}/${{archive}}" -C "$tmp_dir" --wildcards '*.apk'
+
+        copy_and_check() {{
+          local file="$1"
+          local sha256="$2"
+
+          [ -s "${{tmp_dir}}/${{file}}" ] || {{
+            echo "Expected APK not found in ${{archive}}: ${{file}}" >&2
+            exit 1
+          }}
+
+          (
+            cd "$tmp_dir"
+            printf '%s  %s\\n' "$sha256" "$file" | sha256sum -c -
+          )
+
+          cp "${{tmp_dir}}/${{file}}" "$repo_dir/"
+        }}
+
+        {chr(10).join(copy_blocks)}
+        """,
+    )
+
+
 def main():
     print("Checking latest release APKs...")
     lucky = get_lucky()
@@ -577,6 +677,7 @@ def main():
     fakehttp = get_fakehttp()
     smartdns = get_smartdns()
     bandix = get_bandix()
+    nikki = get_nikki()
 
     update_env(
         {
@@ -601,6 +702,8 @@ def main():
             "LUCI_BANDIX_RELEASE_TAG": bandix["luci_tag"],
             "LUCI_BANDIX_VERSION": bandix["luci_version"],
             "LUCI_BANDIX_I18N_VERSION": bandix["i18n_version"],
+            "NIKKI_RELEASE_TAG": nikki["tag"],
+            "NIKKI_OPENWRT_RELEASE": nikki["openwrt_release"],
         }
     )
 
@@ -610,6 +713,7 @@ def main():
     render_fakehttp(fakehttp)
     render_smartdns(smartdns)
     render_bandix(bandix)
+    render_nikki(nikki)
 
     for name, data in [
         ("Lucky", lucky),
@@ -618,6 +722,7 @@ def main():
         ("FakeHTTP", fakehttp),
         ("SmartDNS", smartdns),
         ("Bandix", bandix),
+        ("Nikki", nikki),
     ]:
         print(f"{name}: {data['tag']}")
 
