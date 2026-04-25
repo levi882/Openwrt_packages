@@ -84,6 +84,7 @@ jobs:
           mkdir -p "public/${OPENWRT_BRANCH}/${OPENWRT_ARCH}"
           cp -a "bin/packages/${OPENWRT_ARCH}/${FEED_NAME}" "public/${OPENWRT_BRANCH}/${OPENWRT_ARCH}/"
           cp public-key.pem public/public-key.pem
+          python3 .github/scripts/generate-index.py public "Levi's Feed"
           find public -maxdepth 4 -type f | sort
 
       - name: deploy to cloudflare pages
