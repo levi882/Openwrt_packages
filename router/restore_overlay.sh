@@ -309,6 +309,10 @@ add_related_targets() {
                                return 0
                                ;;
         luci-app-ota)         set -- otahelper ;;
+        luci-app-aurora-config)
+                               emit_target_if_available luci-theme-aurora || return 1
+                               return 0
+                               ;;
         luci-app-quickfile)   set -- quickfile ;;
         luci-app-ramfree)     set -- ramfree ;;
         luci-app-ttyd)        set -- ttyd ;;
@@ -354,6 +358,7 @@ repair_luci_runtime() {
         nginx-mod-luci \
         nginx-mod-ubus \
         uwsgi-luci-support \
+        luci-theme-aurora \
         luci-theme-bootstrap
     do
         apk info -e "$PKG" >/dev/null 2>&1 || continue
@@ -366,7 +371,10 @@ repair_luci_runtime() {
             log "WARNING: luci runtime fix returned non-zero"
     fi
 
-    if apk info -e luci-theme-bootstrap >/dev/null 2>&1; then
+    if apk info -e luci-theme-aurora >/dev/null 2>&1; then
+        uci set luci.main.mediaurlbase='/luci-static/aurora' 2>/dev/null || true
+        uci commit luci 2>/dev/null || true
+    elif apk info -e luci-theme-bootstrap >/dev/null 2>&1; then
         uci set luci.main.mediaurlbase='/luci-static/bootstrap' 2>/dev/null || true
         uci commit luci 2>/dev/null || true
     fi
