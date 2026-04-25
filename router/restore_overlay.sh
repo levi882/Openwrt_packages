@@ -207,6 +207,13 @@ NOT_IN_REPO=/root/apk-not-in-repo.txt
 LIST=/root/apk-world.restore-list
 APK_INDEX=/tmp/restore-apk-list.txt
 APP_CONFIG_STASH=/root/restore-meta/app-config-stash.tar.gz
+SERVICE_STATE=/root/restore-meta/network-addon-services.state
+APK_ADD_BATCH_TIMEOUT="${APK_ADD_BATCH_TIMEOUT:-900}"
+APK_ADD_LUCI_TIMEOUT="${APK_ADD_LUCI_TIMEOUT:-300}"
+APK_ADD_RETRY_TIMEOUT="${APK_ADD_RETRY_TIMEOUT:-120}"
+APK_ADD_ATTEMPTS="${APK_ADD_ATTEMPTS:-3}"
+APK_ADD_RETRY_SLEEP="${APK_ADD_RETRY_SLEEP:-5}"
+APK_RETRY_LUCI="${APK_RETRY_LUCI:-0}"
 ALLOW_RE='^(luci-app-(smartdns|smartdns-lite|dockerman|lucky|vlmcsd|fakehttp|watchcat|oaf|nikki|omcproxy|rtp2httpd|samba4|webdav|easytier|bandix|firewall|upnp|netspeedtest|speedtest|fastnet|package-manager|opkg|attendedsysupgrade|ota|diskman|ttyd|commands|quickfile|filebrowser|filemanager|fileassistant|ramfree|autoreboot|timedreboot|aurora-config)|luci-i18n-(smartdns|smartdns-lite|fakehttp|lucky|easytier|rtp2httpd|bandix|nikki|vlmcsd|watchcat|oaf|samba4|webdav|omcproxy|dockerman|firewall|upnp|netspeedtest|speedtest|fastnet|package-manager|opkg|attendedsysupgrade|ota|diskman|ttyd|commands|quickfile|filebrowser|filemanager|fileassistant|ramfree|autoreboot|timedreboot|aurora-config)-zh-cn|luci-i18n-app-omcproxy-zh-cn|luci-theme-aurora|python3|python3-requests|tcpdump|curl|bash)$'
 DROP_LUCI_RE='^luci-(app|i18n)-(wolplus|zerotier|sqm|socat|qbittorrent|passwall|passwall2|openlist|openlist2|natmap|nlbwmon|mosdns|homeproxy|frpc|eqos|argon-config|airplay2|airconnect|usb-printer|mentohust|ddns|ssr-plus|openclash)(-|$)|^luci-proto-wireguard$|^luci-i18n-proto-wireguard-'
 MYFEED_RE='^(lucky|luci-app-lucky|luci-i18n-lucky-zh-cn|easytier|luci-app-easytier|luci-i18n-easytier-zh-cn|rtp2httpd|luci-app-rtp2httpd|luci-i18n-rtp2httpd-zh-cn|fakehttp|luci-app-fakehttp|luci-i18n-fakehttp-zh-cn|smartdns|luci-app-smartdns|luci-app-smartdns-lite|bandix|luci-app-bandix|luci-i18n-bandix-zh-cn|nikki|luci-app-nikki|luci-i18n-nikki-ru|luci-i18n-nikki-zh-cn|luci-i18n-nikki-zh-tw)$'
@@ -257,12 +264,86 @@ restore_app_configs() {
     rm -f /etc/smartdns/data/smartdns.cache 2>/dev/null || true
 }
 
+service_enabled() {
+    [ -x "/etc/init.d/$1" ] && /etc/init.d/"$1" enabled >/dev/null 2>&1
+}
+
+quiesce_network_addons() {
+    mkdir -p /root/restore-meta
+    : > "$SERVICE_STATE"
+
+    for SVC in smartdns nikki fakehttp appfilter oaf; do
+        [ -x "/etc/init.d/$SVC" ] || continue
+
+        if service_enabled "$SVC"; then
+            STATE=enabled
+        else
+            STATE=disabled
+        fi
+
+        echo "$SVC $STATE" >> "$SERVICE_STATE"
+        log "临时停止网络增强服务: $SVC ($STATE)"
+        /etc/init.d/"$SVC" stop 2>/dev/null || true
+        /etc/init.d/"$SVC" disable 2>/dev/null || true
+    done
+}
+
+restore_network_addons() {
+    [ -s "$SERVICE_STATE" ] || return 0
+
+    while read SVC STATE; do
+        [ -n "$SVC" ] || continue
+        [ -x "/etc/init.d/$SVC" ] || continue
+
+        if [ "$STATE" = "enabled" ]; then
+            log "恢复网络增强服务: $SVC"
+            /etc/init.d/"$SVC" enable 2>/dev/null || true
+            /etc/init.d/"$SVC" restart 2>/dev/null || \
+                /etc/init.d/"$SVC" start 2>/dev/null || true
+        else
+            /etc/init.d/"$SVC" disable 2>/dev/null || true
+            /etc/init.d/"$SVC" stop 2>/dev/null || true
+        fi
+    done < "$SERVICE_STATE"
+}
+
 apk_update_safe() {
     if command -v timeout >/dev/null 2>&1; then
         timeout 120 apk update
     else
         apk update
     fi
+}
+
+apk_add_safe() {
+    LIMIT="$1"
+    shift
+
+    if command -v timeout >/dev/null 2>&1; then
+        timeout "$LIMIT" apk add --force-broken-world "$@"
+    else
+        apk add --force-broken-world "$@"
+    fi
+}
+
+apk_add_retry() {
+    LIMIT="$1"
+    shift
+
+    TRY=1
+    while [ "$TRY" -le "$APK_ADD_ATTEMPTS" ]; do
+        [ "$TRY" = "1" ] || log "apk add retry $TRY/$APK_ADD_ATTEMPTS: $*"
+
+        if apk_add_safe "$LIMIT" "$@"; then
+            return 0
+        fi
+
+        apk cache clean >/dev/null 2>&1 || true
+        TRY=$((TRY + 1))
+        [ "$TRY" -le "$APK_ADD_ATTEMPTS" ] && sleep "$APK_ADD_RETRY_SLEEP"
+    done
+
+    return 1
 }
 
 repo_has_pkg() {
@@ -394,6 +475,11 @@ target_installed() {
     apk info -e "$BASE" >/dev/null 2>&1
 }
 
+is_luci_target() {
+    BASE="${1%@*}"
+    echo "$BASE" | grep -Eq '^luci-(app|i18n)-'
+}
+
 retry_missing_targets() {
     TARGET_LIST="$1"
     [ -s "$TARGET_LIST" ] || return 0
@@ -404,8 +490,39 @@ retry_missing_targets() {
         target_installed "$TARGET" && continue
 
         log "RETRY: $TARGET"
-        apk add --force-broken-world "$TARGET" >>"$LOG" 2>&1 || \
+        apk_add_retry "$APK_ADD_RETRY_TIMEOUT" "$TARGET" >>"$LOG" 2>&1 || \
             log "RETRY FAILED: $TARGET"
+    done < "$TARGET_LIST"
+}
+
+install_target_list() {
+    TARGET_LIST="$1"
+    LABEL="$2"
+    LIMIT="$3"
+    RETRY="$4"
+
+    [ -s "$TARGET_LIST" ] || return 0
+
+    N="$(wc -l < "$TARGET_LIST")"
+    log "批量安装 $N 个${LABEL}..."
+    if ! apk_add_retry "$LIMIT" $(cat "$TARGET_LIST") >>"$LOG" 2>&1; then
+        log "WARNING: ${LABEL}批量 apk add 返回非零，详情见 $LOG"
+        if [ "$RETRY" = "1" ]; then
+            retry_missing_targets "$TARGET_LIST"
+        else
+            log "跳过 ${LABEL}逐个重试，避免单个 LuCI 页面包长时间卡住"
+        fi
+    fi
+
+    while read TARGET; do
+        [ -n "$TARGET" ] || continue
+        BASE="${TARGET%@*}"
+        target_installed "$TARGET" || {
+            log "FAILED: $TARGET"
+            echo "$BASE" >> "$FAILED"
+            remove_from_world "$BASE"
+            remove_from_world "$TARGET"
+        }
     done < "$TARGET_LIST"
 }
 
@@ -525,7 +642,7 @@ install_fakehttp_kmods_if_needed() {
     }
 
     log "补装 FakeHTTP 必需 NFQUEUE 模块..."
-    apk add --force-broken-world $KMODS >>"$LOG" 2>&1 || {
+    apk_add_retry "$APK_ADD_RETRY_TIMEOUT" $KMODS >>"$LOG" 2>&1 || {
         log "WARNING: FakeHTTP kmod install failed"
         for PKG in $KMODS; do
             echo "$PKG" >> "$FAILED"
@@ -543,7 +660,7 @@ install_oaf_kmods_if_needed() {
     }
 
     log "补装应用过滤必需 OAF 模块..."
-    apk add --force-broken-world kmod-oaf >>"$LOG" 2>&1 || {
+    apk_add_retry "$APK_ADD_RETRY_TIMEOUT" kmod-oaf >>"$LOG" 2>&1 || {
         log "WARNING: OAF kmod install failed"
         echo "kmod-oaf" >> "$FAILED"
         remove_from_world "kmod-oaf"
@@ -559,6 +676,8 @@ log "软件恢复白名单：截图保留的 LuCI 功能项"
 
 stash_app_configs
 
+quiesce_network_addons
+
 if [ -s /root/restore-meta/world.skipped-by-allowlist ]; then
     log "以下旧 world 包不在白名单，已跳过："
     cat /root/restore-meta/world.skipped-by-allowlist | tee -a "$LOG"
@@ -568,8 +687,6 @@ if [ -s /root/restore-meta/packages.pruned-by-allowlist ]; then
     log "以下旧 overlay 包文件已按白名单清理："
     cat /root/restore-meta/packages.pruned-by-allowlist | tee -a "$LOG"
 fi
-
-[ -x /etc/init.d/fakehttp ] && /etc/init.d/fakehttp stop 2>/dev/null || true
 
 log "恢复当前固件 apk world 和源..."
 [ -f /rom/etc/apk/world ] && cp /rom/etc/apk/world /etc/apk/world
@@ -622,7 +739,11 @@ if [ "$UPDATE_OK" = "1" ]; then
 fi
 
 INSTALL_LIST=/tmp/restore-install-list.txt
+INSTALL_CORE_LIST=/tmp/restore-install-core-list.txt
+INSTALL_LUCI_LIST=/tmp/restore-install-luci-list.txt
 : > "$INSTALL_LIST"
+: > "$INSTALL_CORE_LIST"
+: > "$INSTALL_LUCI_LIST"
 
 if [ "$UPDATE_OK" = "1" ] && [ -s "$LIST" ]; then
     TOTAL="$(wc -l < "$LIST")"
@@ -679,21 +800,17 @@ if [ "$UPDATE_OK" = "1" ] && [ -s "$LIST" ]; then
         sort -u "$INSTALL_LIST" > "$INSTALL_LIST.sorted"
         mv "$INSTALL_LIST.sorted" "$INSTALL_LIST"
 
-        N="$(wc -l < "$INSTALL_LIST")"
-        log "批量安装 $N 个包（一次 apk add 解依赖）..."
-        if ! apk add --force-broken-world $(cat "$INSTALL_LIST") >>"$LOG" 2>&1; then
-            log "WARNING: 批量 apk add 返回非零，可能部分包失败，详情见 $LOG"
-            retry_missing_targets "$INSTALL_LIST"
-        fi
         while read TARGET; do
-            BASE="${TARGET%@*}"
-            target_installed "$TARGET" || {
-                log "FAILED: $TARGET"
-                echo "$BASE" >> "$FAILED"
-                remove_from_world "$BASE"
-                remove_from_world "$TARGET"
-            }
+            [ -n "$TARGET" ] || continue
+            if is_luci_target "$TARGET"; then
+                echo "$TARGET" >> "$INSTALL_LUCI_LIST"
+            else
+                echo "$TARGET" >> "$INSTALL_CORE_LIST"
+            fi
         done < "$INSTALL_LIST"
+
+        install_target_list "$INSTALL_CORE_LIST" "核心/后端包" "$APK_ADD_BATCH_TIMEOUT" "1"
+        install_target_list "$INSTALL_LUCI_LIST" "LuCI 页面包" "$APK_ADD_LUCI_TIMEOUT" "$APK_RETRY_LUCI"
     else
         log "没有需要新装的包"
     fi
@@ -729,14 +846,7 @@ rm -rf /tmp/luci-indexcache /tmp/luci-modulecache /tmp/luci-*cache 2>/dev/null |
 /etc/init.d/nginx restart 2>/dev/null || true
 /etc/init.d/uhttpd restart 2>/dev/null || true
 
-if [ -x /etc/init.d/smartdns ]; then
-    /etc/init.d/smartdns restart 2>/dev/null || true
-fi
-
-if [ -x /etc/init.d/fakehttp ]; then
-    /etc/init.d/fakehttp enable 2>/dev/null || true
-    /etc/init.d/fakehttp restart 2>/dev/null || true
-fi
+restore_network_addons
 
 if [ -x /etc/init.d/iptv-refresh-httpd ]; then
     /etc/init.d/iptv-refresh-httpd enable 2>/dev/null || true
