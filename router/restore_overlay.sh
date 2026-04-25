@@ -283,6 +283,29 @@ else
     [ -s "$LIST" ] || log "没有找到软件包恢复清单：$LIST"
 fi
 
+if [ "$UPDATE_OK" = "1" ]; then
+    log "强制覆盖：把所有 @myfeed / @nikki 也提供的已装包改从对应 tag 安装..."
+    apk info 2>/dev/null | sort -u | while read PKG; do
+        [ -n "$PKG" ] || continue
+        case "$PKG" in
+            kmod-*) continue ;;
+        esac
+        POLICY="$(apk policy "$PKG" 2>/dev/null)"
+        case "$POLICY" in
+            *"@myfeed "*)
+                log "Enforcing ${PKG}@myfeed"
+                apk add --force-broken-world "${PKG}@myfeed" >>"$LOG" 2>&1 || \
+                    log "FAILED enforce: ${PKG}@myfeed"
+                ;;
+            *"@nikki "*)
+                log "Enforcing ${PKG}@nikki"
+                apk add --force-broken-world "${PKG}@nikki" >>"$LOG" 2>&1 || \
+                    log "FAILED enforce: ${PKG}@nikki"
+                ;;
+        esac
+    done
+fi
+
 log "复查失败列表，移除实际已经安装成功的软件包..."
 TMP_FAILED=/root/apk-install-failed.tmp
 : > "$TMP_FAILED"
