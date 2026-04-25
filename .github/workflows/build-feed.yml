@@ -73,6 +73,12 @@ jobs:
       - name: add Bandix release apks
         run: bash .github/scripts/download-bandix-apks.sh "bin/packages/${OPENWRT_ARCH}/${FEED_NAME}"
 
+      - name: cache OpenWrt SDK
+        uses: actions/cache@v4
+        with:
+          path: .openwrt-sdk-cache
+          key: openwrt-sdk-${{ env.OPENWRT_BRANCH }}-${{ env.OPENWRT_ARCH }}-v1
+
       - name: reindex apk feed
         run: bash .github/scripts/reindex-apk-feed.sh "bin/packages/${OPENWRT_ARCH}/${FEED_NAME}"
         env:
