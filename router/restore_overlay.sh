@@ -27,10 +27,11 @@ tar -xzf "$BACKUP_FILE" -C /
 UP=/overlay/upper
 mkdir -p "$UP/root/restore-meta"
 
-ALLOW_RE='^(luci-app-(smartdns|smartdns-lite|dockerman|lucky|vlmcsd|fakehttp|watchcat|oaf|nikki|omcproxy|rtp2httpd|samba4|webdav|easytier|bandix|firewall|upnp|netspeedtest|speedtest|fastnet|package-manager|opkg|attendedsysupgrade|diskman|ttyd|commands|filebrowser|filemanager|fileassistant|autoreboot|timedreboot|aurora-config)|luci-i18n-(smartdns|smartdns-lite|fakehttp|lucky|easytier|rtp2httpd|bandix|nikki|vlmcsd|watchcat|oaf|samba4|webdav|omcproxy|dockerman|firewall|upnp|netspeedtest|speedtest|fastnet|package-manager|opkg|attendedsysupgrade|diskman|ttyd|commands|filebrowser|filemanager|fileassistant|autoreboot|timedreboot|aurora-config)-zh-cn|luci-i18n-app-omcproxy-zh-cn|luci-theme-aurora|python3|python3-requests|tcpdump|curl|bash)$'
+ALLOW_RE='^(luci-app-(smartdns|smartdns-lite|dockerman|lucky|vlmcsd|fakehttp|watchcat|oaf|nikki|omcproxy|rtp2httpd|samba4|webdav|easytier|bandix|firewall|upnp|netspeedtest|speedtest|fastnet|package-manager|opkg|attendedsysupgrade|ota|diskman|ttyd|commands|quickfile|filebrowser|filemanager|fileassistant|ramfree|autoreboot|timedreboot|aurora-config)|luci-i18n-(smartdns|smartdns-lite|fakehttp|lucky|easytier|rtp2httpd|bandix|nikki|vlmcsd|watchcat|oaf|samba4|webdav|omcproxy|dockerman|firewall|upnp|netspeedtest|speedtest|fastnet|package-manager|opkg|attendedsysupgrade|ota|diskman|ttyd|commands|quickfile|filebrowser|filemanager|fileassistant|ramfree|autoreboot|timedreboot|aurora-config)-zh-cn|luci-i18n-app-omcproxy-zh-cn|luci-theme-aurora|python3|python3-requests|tcpdump|curl|bash)$'
 SKIPPED_BY_ALLOW="$UP/root/restore-meta/world.skipped-by-allowlist"
 PRUNED_BY_ALLOW="$UP/root/restore-meta/packages.pruned-by-allowlist"
 CURRENT_WORLD="$UP/root/restore-meta/world.from-current-rom"
+LUCI_BAD_OVERLAY="$UP/root/restore-meta/luci-bad-overlay.tar.gz"
 : > "$SKIPPED_BY_ALLOW"
 : > "$PRUNED_BY_ALLOW"
 : > "$CURRENT_WORLD"
@@ -71,6 +72,33 @@ if [ -f "$UP/etc/apk/world" ]; then
         mv "$SKIPPED_BY_ALLOW.tmp" "$SKIPPED_BY_ALLOW"
     fi
 fi
+
+sanitize_luci_overlay() {
+    echo "清理旧 LuCI overlay 运行时文件..."
+
+    tar -czf "$LUCI_BAD_OVERLAY" \
+        -C "$UP" \
+        etc/config/luci \
+        etc/board.json \
+        usr/lib/lua/luci \
+        usr/share/luci \
+        www/luci-static \
+        www/cgi-bin/luci \
+        usr/share/rpcd/acl.d \
+        usr/libexec/rpcd/luci \
+        2>/dev/null || true
+
+    rm -rf "$UP/usr/lib/lua/luci"
+    rm -rf "$UP/usr/share/luci"
+    rm -rf "$UP/www/luci-static"
+    rm -rf "$UP/www/cgi-bin/luci"
+    rm -rf "$UP/usr/share/rpcd/acl.d"/luci*
+    rm -rf "$UP/usr/libexec/rpcd/luci"
+    rm -f "$UP/etc/config/luci"
+    rm -f "$UP/etc/board.json"
+}
+
+sanitize_luci_overlay
 
 prune_non_allowlist_overlay_files() {
     DB="$UP/lib/apk/db/installed"
@@ -151,7 +179,7 @@ LOG=/root/post_restore_reinstall.log
 FAILED=/root/apk-install-failed.txt
 NOT_IN_REPO=/root/apk-not-in-repo.txt
 LIST=/root/apk-world.restore-list
-ALLOW_RE='^(luci-app-(smartdns|smartdns-lite|dockerman|lucky|vlmcsd|fakehttp|watchcat|oaf|nikki|omcproxy|rtp2httpd|samba4|webdav|easytier|bandix|firewall|upnp|netspeedtest|speedtest|fastnet|package-manager|opkg|attendedsysupgrade|diskman|ttyd|commands|filebrowser|filemanager|fileassistant|autoreboot|timedreboot|aurora-config)|luci-i18n-(smartdns|smartdns-lite|fakehttp|lucky|easytier|rtp2httpd|bandix|nikki|vlmcsd|watchcat|oaf|samba4|webdav|omcproxy|dockerman|firewall|upnp|netspeedtest|speedtest|fastnet|package-manager|opkg|attendedsysupgrade|diskman|ttyd|commands|filebrowser|filemanager|fileassistant|autoreboot|timedreboot|aurora-config)-zh-cn|luci-i18n-app-omcproxy-zh-cn|luci-theme-aurora|python3|python3-requests|tcpdump|curl|bash)$'
+ALLOW_RE='^(luci-app-(smartdns|smartdns-lite|dockerman|lucky|vlmcsd|fakehttp|watchcat|oaf|nikki|omcproxy|rtp2httpd|samba4|webdav|easytier|bandix|firewall|upnp|netspeedtest|speedtest|fastnet|package-manager|opkg|attendedsysupgrade|ota|diskman|ttyd|commands|quickfile|filebrowser|filemanager|fileassistant|ramfree|autoreboot|timedreboot|aurora-config)|luci-i18n-(smartdns|smartdns-lite|fakehttp|lucky|easytier|rtp2httpd|bandix|nikki|vlmcsd|watchcat|oaf|samba4|webdav|omcproxy|dockerman|firewall|upnp|netspeedtest|speedtest|fastnet|package-manager|opkg|attendedsysupgrade|ota|diskman|ttyd|commands|quickfile|filebrowser|filemanager|fileassistant|ramfree|autoreboot|timedreboot|aurora-config)-zh-cn|luci-i18n-app-omcproxy-zh-cn|luci-theme-aurora|python3|python3-requests|tcpdump|curl|bash)$'
 DROP_LUCI_RE='^luci-(app|i18n)-(wolplus|zerotier|sqm|socat|qbittorrent|passwall|passwall2|openlist|openlist2|natmap|nlbwmon|mosdns|homeproxy|frpc|eqos|argon-config|airplay2|airconnect|usb-printer|mentohust|ddns|ssr-plus|openclash)(-|$)|^luci-proto-wireguard$|^luci-i18n-proto-wireguard-'
 MYFEED_RE='^(lucky|luci-app-lucky|luci-i18n-lucky-zh-cn|easytier|luci-app-easytier|luci-i18n-easytier-zh-cn|rtp2httpd|luci-app-rtp2httpd|luci-i18n-rtp2httpd-zh-cn|fakehttp|luci-app-fakehttp|luci-i18n-fakehttp-zh-cn|smartdns|luci-app-smartdns|luci-app-smartdns-lite|bandix|luci-app-bandix|luci-i18n-bandix-zh-cn|nikki|luci-app-nikki|luci-i18n-nikki-ru|luci-i18n-nikki-zh-cn|luci-i18n-nikki-zh-tw)$'
 
@@ -185,6 +213,21 @@ is_myfeed_pkg() {
     echo "$1" | grep -Eq "$MYFEED_RE"
 }
 
+emit_target_if_available() {
+    NAME="$1"
+    repo_has_pkg "$NAME" || return 0
+    resolve_install_name "$NAME"
+}
+
+emit_first_available_target() {
+    for NAME in "$@"; do
+        repo_has_pkg "$NAME" || continue
+        resolve_install_name "$NAME"
+        return $?
+    done
+    return 0
+}
+
 resolve_install_name() {
     NAME="${1%@*}"
 
@@ -205,7 +248,7 @@ resolve_install_name() {
     fi
 }
 
-add_myfeed_related_targets() {
+add_related_targets() {
     case "$1" in
         luci-app-lucky)       set -- lucky ;;
         luci-app-easytier)    set -- easytier ;;
@@ -215,6 +258,41 @@ add_myfeed_related_targets() {
                                set -- smartdns ;;
         luci-app-bandix)      set -- bandix ;;
         luci-app-nikki)       set -- nikki ;;
+        luci-app-dockerman)
+                               emit_target_if_available docker || return 1
+                               emit_target_if_available dockerd || return 1
+                               emit_target_if_available containerd || return 1
+                               emit_target_if_available runc || return 1
+                               emit_first_available_target docker-compose-v2 docker-compose || return 1
+                               return 0
+                               ;;
+        luci-app-vlmcsd)      set -- vlmcsd ;;
+        luci-app-watchcat)    set -- watchcat ;;
+        luci-app-oaf)         set -- appfilter ;;
+        luci-app-omcproxy)    set -- omcproxy ;;
+        luci-app-samba4)
+                               emit_target_if_available samba4-server || return 1
+                               emit_first_available_target wsdd2 || return 1
+                               return 0
+                               ;;
+        luci-app-webdav)      set -- webdav ;;
+        luci-app-firewall)    set -- firewall4 ;;
+        luci-app-upnp)
+                               emit_first_available_target miniupnpd-nftables miniupnpd || return 1
+                               return 0
+                               ;;
+        luci-app-netspeedtest|luci-app-speedtest)
+                               emit_first_available_target speedtest-go speedtest-cli || return 1
+                               return 0
+                               ;;
+        luci-app-diskman)
+                               emit_target_if_available block-mount || return 1
+                               return 0
+                               ;;
+        luci-app-ota)         set -- otahelper ;;
+        luci-app-quickfile)   set -- quickfile ;;
+        luci-app-ramfree)     set -- ramfree ;;
+        luci-app-ttyd)        set -- ttyd ;;
         *)                    return 0 ;;
     esac
 
@@ -239,6 +317,40 @@ drop_unwanted_luci_pages() {
             log "WARNING: failed to remove $PKG"
         remove_from_world "$PKG"
     done
+}
+
+repair_luci_runtime() {
+    FIX_LIST=""
+
+    for PKG in \
+        luci-base \
+        luci-mod-status \
+        luci-mod-network \
+        luci-mod-system \
+        luci-nginx \
+        rpcd-mod-luci \
+        rpcd-mod-ucode \
+        rpcd-mod-file \
+        rpcd-mod-iwinfo \
+        nginx-mod-luci \
+        nginx-mod-ubus \
+        uwsgi-luci-support \
+        luci-theme-bootstrap
+    do
+        apk info -e "$PKG" >/dev/null 2>&1 || continue
+        FIX_LIST="$FIX_LIST $PKG"
+    done
+
+    if [ -n "$FIX_LIST" ]; then
+        log "修复 LuCI 核心运行时..."
+        apk fix $FIX_LIST >>"$LOG" 2>&1 || \
+            log "WARNING: luci runtime fix returned non-zero"
+    fi
+
+    if apk info -e luci-theme-bootstrap >/dev/null 2>&1; then
+        uci set luci.main.mediaurlbase='/luci-static/bootstrap' 2>/dev/null || true
+        uci commit luci 2>/dev/null || true
+    fi
 }
 
 list_has_pkg_pattern() {
@@ -447,7 +559,7 @@ if [ "$UPDATE_OK" = "1" ] && [ -s "$LIST" ]; then
             continue
         }
 
-        RELATED_TARGETS="$(add_myfeed_related_targets "$BASE")" || {
+        RELATED_TARGETS="$(add_related_targets "$BASE")" || {
             echo "$BASE" >> "$NOT_IN_REPO"
             remove_from_world "$BASE"
             remove_from_world "$PKG"
@@ -506,6 +618,9 @@ if [ "$UPDATE_OK" = "1" ]; then
     fi
 fi
 
+drop_unwanted_luci_pages
+repair_luci_runtime
+
 log "复查失败列表，移除实际已经安装成功的软件包..."
 TMP_FAILED=/root/apk-install-failed.tmp
 : > "$TMP_FAILED"
@@ -526,6 +641,8 @@ done
 log "重启服务..."
 rm -rf /tmp/luci-indexcache /tmp/luci-modulecache /tmp/luci-*cache 2>/dev/null || true
 /etc/init.d/rpcd restart 2>/dev/null || true
+/etc/init.d/uwsgi restart 2>/dev/null || true
+/etc/init.d/nginx restart 2>/dev/null || true
 /etc/init.d/uhttpd restart 2>/dev/null || true
 
 if [ -x /etc/init.d/smartdns ]; then
