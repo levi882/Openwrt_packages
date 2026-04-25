@@ -86,6 +86,19 @@ repo_has_pkg() {
     '
 }
 
+dump_pkgs_from_tag() {
+    TAG="$1"
+    OUT="$2"
+    [ -n "$TAG" ] || { : > "$OUT"; return 0; }
+    apk list -a 2>/dev/null | awk -v t="@$TAG" '
+        index($0, t) > 0 {
+            n = $1
+            sub(/-[0-9].*$/, "", n)
+            if (n != "") print n
+        }
+    ' | sort -u > "$OUT"
+}
+
 remove_from_world() {
     PKG="$1"
     [ -n "$PKG" ] || return 0
@@ -128,8 +141,8 @@ add_myfeed() {
         return 0
     }
 
-    echo "$MY_REPO" > /etc/apk/repositories.d/00-myfeed.list
-    log "Added myfeed: $MY_REPO"
+    echo "@myfeed $MY_REPO" > /etc/apk/repositories.d/00-myfeed.list
+    log "Added myfeed (tagged @myfeed): $MY_REPO"
 }
 
 add_nikki_feed_if_needed() {
@@ -159,8 +172,8 @@ add_nikki_feed_if_needed() {
         return 0
     }
 
-    echo "$NIKKI_REPO" > /etc/apk/repositories.d/20-nikki.list
-    log "Added Nikki feed: $NIKKI_REPO"
+    echo "@nikki $NIKKI_REPO" > /etc/apk/repositories.d/20-nikki.list
+    log "Added Nikki feed (tagged @nikki): $NIKKI_REPO"
 }
 
 disable_repo_file() {
@@ -239,6 +252,31 @@ if [ "$UPDATE_OK" = "1" ]; then
     install_fakehttp_kmods_if_needed
 fi
 
+MYFEED_PKGS=/tmp/restore-myfeed-pkgs.txt
+NIKKI_PKGS=/tmp/restore-nikki-pkgs.txt
+: > "$MYFEED_PKGS"
+: > "$NIKKI_PKGS"
+
+if [ "$UPDATE_OK" = "1" ]; then
+    log "枚举 myfeed / nikki 提供的包名，用于安装时强制走 @tag..."
+    [ -f /etc/apk/repositories.d/00-myfeed.list ] && \
+        dump_pkgs_from_tag myfeed "$MYFEED_PKGS"
+    [ -f /etc/apk/repositories.d/20-nikki.list ] && \
+        dump_pkgs_from_tag nikki "$NIKKI_PKGS"
+    log "myfeed 提供 $(wc -l < "$MYFEED_PKGS") 个包，nikki 提供 $(wc -l < "$NIKKI_PKGS") 个包"
+fi
+
+resolve_install_name() {
+    NAME="${1%@*}"
+    if [ -s "$MYFEED_PKGS" ] && grep -qxF "$NAME" "$MYFEED_PKGS"; then
+        echo "${NAME}@myfeed"
+    elif [ -s "$NIKKI_PKGS" ] && grep -qxF "$NAME" "$NIKKI_PKGS"; then
+        echo "${NAME}@nikki"
+    else
+        echo "$NAME"
+    fi
+}
+
 if [ "$UPDATE_OK" = "1" ] && [ -s "$LIST" ]; then
     TOTAL="$(wc -l < "$LIST")"
     i=0
@@ -248,19 +286,24 @@ if [ "$UPDATE_OK" = "1" ] && [ -s "$LIST" ]; then
         [ -n "$PKG" ] || continue
         i=$((i + 1))
 
-        apk info -e "$PKG" >/dev/null 2>&1 && continue
+        BASE="${PKG%@*}"
 
-        if ! repo_has_pkg "$PKG"; then
-            log "SKIP not in repo: $PKG"
-            echo "$PKG" >> "$NOT_IN_REPO"
+        apk info -e "$BASE" >/dev/null 2>&1 && continue
+
+        if ! repo_has_pkg "$BASE"; then
+            log "SKIP not in repo: $BASE"
+            echo "$BASE" >> "$NOT_IN_REPO"
+            remove_from_world "$BASE"
             remove_from_world "$PKG"
             continue
         fi
 
-        log "[$i/$TOTAL] Installing $PKG"
-        apk add --force-broken-world "$PKG" >>"$LOG" 2>&1 || {
-            log "FAILED: $PKG"
-            echo "$PKG" >> "$FAILED"
+        TARGET="$(resolve_install_name "$BASE")"
+        log "[$i/$TOTAL] Installing $TARGET"
+        apk add --force-broken-world "$TARGET" >>"$LOG" 2>&1 || {
+            log "FAILED: $TARGET"
+            echo "$BASE" >> "$FAILED"
+            remove_from_world "$BASE"
             remove_from_world "$PKG"
         }
     done < "$LIST"
