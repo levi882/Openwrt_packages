@@ -16,12 +16,10 @@ echo "输入 YES 继续："
 read CONFIRM
 [ "$CONFIRM" = "YES" ] || exit 0
 
-CURRENT_DISTFEEDS_TMP=/tmp/restore-current-distfeeds.list
-rm -f "$CURRENT_DISTFEEDS_TMP"
+DISTFEEDS_BEFORE_RESTORE=/tmp/restore-distfeeds.before-restore.list
+rm -f "$DISTFEEDS_BEFORE_RESTORE"
 if [ -f /etc/apk/repositories.d/distfeeds.list ]; then
-    cp /etc/apk/repositories.d/distfeeds.list "$CURRENT_DISTFEEDS_TMP"
-elif [ -f /rom/etc/apk/repositories.d/distfeeds.list ]; then
-    cp /rom/etc/apk/repositories.d/distfeeds.list "$CURRENT_DISTFEEDS_TMP"
+    cp /etc/apk/repositories.d/distfeeds.list "$DISTFEEDS_BEFORE_RESTORE"
 fi
 
 echo "校验备份包..."
@@ -35,8 +33,8 @@ tar -xzf "$BACKUP_FILE" -C /
 UP=/overlay/upper
 mkdir -p "$UP/root/restore-meta"
 
-[ -s "$CURRENT_DISTFEEDS_TMP" ] && \
-    cp "$CURRENT_DISTFEEDS_TMP" "$UP/root/restore-meta/distfeeds.current-system.list"
+[ -s "$DISTFEEDS_BEFORE_RESTORE" ] && \
+    cp "$DISTFEEDS_BEFORE_RESTORE" "$UP/root/restore-meta/distfeeds.before-restore.list"
 
 ALLOW_RE='^(luci-app-(smartdns|smartdns-lite|dockerman|lucky|vlmcsd|fakehttp|watchcat|oaf|nikki|omcproxy|rtp2httpd|samba4|webdav|easytier|bandix|firewall|upnp|netspeedtest|speedtest|fastnet|package-manager|opkg|attendedsysupgrade|ota|diskman|ttyd|commands|quickfile|filebrowser|filemanager|fileassistant|ramfree|autoreboot|timedreboot|aurora-config)|luci-i18n-(smartdns|smartdns-lite|fakehttp|lucky|easytier|rtp2httpd|bandix|nikki|vlmcsd|watchcat|oaf|samba4|webdav|omcproxy|dockerman|firewall|upnp|netspeedtest|speedtest|fastnet|package-manager|opkg|attendedsysupgrade|ota|diskman|ttyd|commands|quickfile|filebrowser|filemanager|fileassistant|ramfree|autoreboot|timedreboot|aurora-config)-zh-cn|luci-i18n-app-omcproxy-zh-cn|luci-theme-aurora|python3|python3-requests|tcpdump|curl|bash)$'
 SKIPPED_BY_ALLOW="$UP/root/restore-meta/world.skipped-by-allowlist"
@@ -226,6 +224,7 @@ APK_ADD_ATTEMPTS="${APK_ADD_ATTEMPTS:-3}"
 APK_ADD_RETRY_SLEEP="${APK_ADD_RETRY_SLEEP:-5}"
 APK_ADD_CORE_CHUNK_SIZE="${APK_ADD_CORE_CHUNK_SIZE:-6}"
 APK_RETRY_LUCI="${APK_RETRY_LUCI:-0}"
+OPENWRT_MIRROR_BASE="${OPENWRT_MIRROR_BASE:-https://mirrors.cloud.tencent.com/openwrt}"
 ALLOW_RE='^(luci-app-(smartdns|smartdns-lite|dockerman|lucky|vlmcsd|fakehttp|watchcat|oaf|nikki|omcproxy|rtp2httpd|samba4|webdav|easytier|bandix|firewall|upnp|netspeedtest|speedtest|fastnet|package-manager|opkg|attendedsysupgrade|ota|diskman|ttyd|commands|quickfile|filebrowser|filemanager|fileassistant|ramfree|autoreboot|timedreboot|aurora-config)|luci-i18n-(smartdns|smartdns-lite|fakehttp|lucky|easytier|rtp2httpd|bandix|nikki|vlmcsd|watchcat|oaf|samba4|webdav|omcproxy|dockerman|firewall|upnp|netspeedtest|speedtest|fastnet|package-manager|opkg|attendedsysupgrade|ota|diskman|ttyd|commands|quickfile|filebrowser|filemanager|fileassistant|ramfree|autoreboot|timedreboot|aurora-config)-zh-cn|luci-i18n-app-omcproxy-zh-cn|luci-theme-aurora|python3|python3-requests|tcpdump|curl|bash)$'
 DROP_LUCI_RE='^luci-(app|i18n)-(wolplus|zerotier|sqm|socat|qbittorrent|passwall|passwall2|openlist|openlist2|natmap|nlbwmon|mosdns|homeproxy|frpc|eqos|argon-config|airplay2|airconnect|usb-printer|mentohust|ddns|ssr-plus|openclash)(-|$)|^luci-proto-wireguard$|^luci-i18n-proto-wireguard-'
 MYFEED_RE='^(lucky|luci-app-lucky|luci-i18n-lucky-zh-cn|easytier|luci-app-easytier|luci-i18n-easytier-zh-cn|rtp2httpd|luci-app-rtp2httpd|luci-i18n-rtp2httpd-zh-cn|fakehttp|luci-app-fakehttp|luci-i18n-fakehttp-zh-cn|smartdns|luci-app-smartdns|luci-app-smartdns-lite|bandix|luci-app-bandix|luci-i18n-bandix-zh-cn|nikki|luci-app-nikki|luci-i18n-nikki-ru|luci-i18n-nikki-zh-cn|luci-i18n-nikki-zh-tw)$'
@@ -317,6 +316,30 @@ restore_network_addons() {
             /etc/init.d/"$SVC" stop 2>/dev/null || true
         fi
     done < "$SERVICE_STATE"
+}
+
+restore_distfeeds() {
+    mkdir -p /etc/apk/repositories.d
+
+    if [ -s /root/restore-meta/distfeeds.before-restore.list ]; then
+        cp /root/restore-meta/distfeeds.before-restore.list /etc/apk/repositories.d/distfeeds.list
+        log "使用恢复前保存的 OpenWrt 软件源"
+        return 0
+    fi
+
+    if [ -f /rom/etc/apk/repositories.d/distfeeds.list ]; then
+        cp /rom/etc/apk/repositories.d/distfeeds.list /etc/apk/repositories.d/distfeeds.list
+    else
+        return 0
+    fi
+
+    [ -n "$OPENWRT_MIRROR_BASE" ] || return 0
+    MIRROR_BASE="${OPENWRT_MIRROR_BASE%/}"
+
+    sed "s#https://downloads.openwrt.org#$MIRROR_BASE#g; s#http://downloads.openwrt.org#$MIRROR_BASE#g" \
+        /etc/apk/repositories.d/distfeeds.list > /tmp/distfeeds.list.$$ && \
+        mv /tmp/distfeeds.list.$$ /etc/apk/repositories.d/distfeeds.list
+    log "使用 OpenWrt 镜像源: $MIRROR_BASE"
 }
 
 apk_update_safe() {
@@ -734,13 +757,7 @@ log "恢复当前固件 apk world 和源..."
 
 drop_unwanted_luci_pages
 
-mkdir -p /etc/apk/repositories.d
-
-if [ -s /root/restore-meta/distfeeds.current-system.list ]; then
-    cp /root/restore-meta/distfeeds.current-system.list /etc/apk/repositories.d/distfeeds.list
-elif [ -f /rom/etc/apk/repositories.d/distfeeds.list ]; then
-    cp /rom/etc/apk/repositories.d/distfeeds.list /etc/apk/repositories.d/distfeeds.list
-fi
+restore_distfeeds
 
 [ -s /root/restore-meta/customfeeds.list ] && \
     cp /root/restore-meta/customfeeds.list /etc/apk/repositories.d/customfeeds.list
