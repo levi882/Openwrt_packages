@@ -166,6 +166,13 @@ prune_non_allowlist_overlay_files() {
         case "$REL" in
             /*|../*|*/../*|..|*/..) continue ;;
             etc/config/*) continue ;;
+            etc/smartdns/*) continue ;;
+            etc/nikki/*) continue ;;
+            etc/mihomo/*) continue ;;
+            usr/share/nikki/*) continue ;;
+            usr/share/mihomo/*) continue ;;
+            root/.config/nikki/*) continue ;;
+            root/.config/mihomo/*) continue ;;
         esac
         rm -f "$UP/$REL"
     done
@@ -187,7 +194,7 @@ rm -rf "$UP/etc/modules.d"
 
 echo "清理 SmartDNS 运行缓存..."
 rm -f "$UP/etc/smartdns/smartdns.cache"
-rm -rf "$UP/etc/smartdns/data"
+rm -f "$UP/etc/smartdns/data"/smartdns.cache 2>/dev/null || true
 
 rm -rf /overlay/work /overlay/lost+found
 
@@ -198,12 +205,56 @@ LOG=/root/post_restore_reinstall.log
 FAILED=/root/apk-install-failed.txt
 NOT_IN_REPO=/root/apk-not-in-repo.txt
 LIST=/root/apk-world.restore-list
+APK_INDEX=/tmp/restore-apk-list.txt
+APP_CONFIG_STASH=/root/restore-meta/app-config-stash.tar.gz
 ALLOW_RE='^(luci-app-(smartdns|smartdns-lite|dockerman|lucky|vlmcsd|fakehttp|watchcat|oaf|nikki|omcproxy|rtp2httpd|samba4|webdav|easytier|bandix|firewall|upnp|netspeedtest|speedtest|fastnet|package-manager|opkg|attendedsysupgrade|ota|diskman|ttyd|commands|quickfile|filebrowser|filemanager|fileassistant|ramfree|autoreboot|timedreboot|aurora-config)|luci-i18n-(smartdns|smartdns-lite|fakehttp|lucky|easytier|rtp2httpd|bandix|nikki|vlmcsd|watchcat|oaf|samba4|webdav|omcproxy|dockerman|firewall|upnp|netspeedtest|speedtest|fastnet|package-manager|opkg|attendedsysupgrade|ota|diskman|ttyd|commands|quickfile|filebrowser|filemanager|fileassistant|ramfree|autoreboot|timedreboot|aurora-config)-zh-cn|luci-i18n-app-omcproxy-zh-cn|luci-theme-aurora|python3|python3-requests|tcpdump|curl|bash)$'
 DROP_LUCI_RE='^luci-(app|i18n)-(wolplus|zerotier|sqm|socat|qbittorrent|passwall|passwall2|openlist|openlist2|natmap|nlbwmon|mosdns|homeproxy|frpc|eqos|argon-config|airplay2|airconnect|usb-printer|mentohust|ddns|ssr-plus|openclash)(-|$)|^luci-proto-wireguard$|^luci-i18n-proto-wireguard-'
 MYFEED_RE='^(lucky|luci-app-lucky|luci-i18n-lucky-zh-cn|easytier|luci-app-easytier|luci-i18n-easytier-zh-cn|rtp2httpd|luci-app-rtp2httpd|luci-i18n-rtp2httpd-zh-cn|fakehttp|luci-app-fakehttp|luci-i18n-fakehttp-zh-cn|smartdns|luci-app-smartdns|luci-app-smartdns-lite|bandix|luci-app-bandix|luci-i18n-bandix-zh-cn|nikki|luci-app-nikki|luci-i18n-nikki-ru|luci-i18n-nikki-zh-cn|luci-i18n-nikki-zh-tw)$'
 
 log() {
     echo "$@" | tee -a "$LOG"
+}
+
+stash_app_configs() {
+    mkdir -p /root/restore-meta
+    rm -f "$APP_CONFIG_STASH"
+
+    set --
+    for P in \
+        etc/config/smartdns etc/smartdns \
+        etc/config/nikki \
+        etc/nikki/mixin.yaml etc/nikki/mixin.yaml.apk-new \
+        etc/nikki/subscriptions etc/nikki/scripts etc/nikki/nftables \
+        etc/nikki/profiles etc/nikki/proxy-providers \
+        etc/nikki/rule-providers etc/nikki/rules \
+        etc/nikki/providers etc/nikki/config.yaml \
+        etc/config/fakehttp etc/config/appfilter \
+        etc/config/omcproxy etc/config/rtp2httpd \
+        etc/config/bandix etc/config/easytier \
+        etc/config/dockerd etc/config/samba4 \
+        etc/config/ttyd etc/config/lucky \
+        etc/config/vlmcsd etc/config/watchcat \
+        etc/config/webdav etc/config/upnpd
+    do
+        [ -e "/$P" ] && set -- "$@" "$P"
+    done
+
+    [ "$#" -gt 0 ] || return 0
+
+    log "暂存应用配置，避免软件重装覆盖..."
+    tar -czf "$APP_CONFIG_STASH" -C / "$@" >>"$LOG" 2>&1 || \
+        log "WARNING: app config stash failed"
+}
+
+restore_app_configs() {
+    [ -s "$APP_CONFIG_STASH" ] || return 0
+
+    log "还原应用配置快照..."
+    tar -xzf "$APP_CONFIG_STASH" -C / >>"$LOG" 2>&1 || \
+        log "WARNING: app config restore failed"
+
+    rm -f /etc/smartdns/smartdns.cache 2>/dev/null || true
+    rm -f /etc/smartdns/data/smartdns.cache 2>/dev/null || true
 }
 
 apk_update_safe() {
@@ -215,6 +266,15 @@ apk_update_safe() {
 }
 
 repo_has_pkg() {
+    if [ -s "$APK_INDEX" ]; then
+        awk -v p="$1" '
+            BEGIN { prefix = p "-" }
+            index($0, prefix) == 1 { found = 1 }
+            END { exit found ? 0 : 1 }
+        ' "$APK_INDEX"
+        return $?
+    fi
+
     apk list -a "$1" 2>/dev/null | awk -v p="$1" '
         BEGIN { prefix = p "-" }
         index($0, prefix) == 1 { found = 1 }
@@ -235,6 +295,7 @@ is_myfeed_pkg() {
 emit_target_if_available() {
     NAME="$1"
     repo_has_pkg "$NAME" || return 0
+    apk info -e "$NAME" >/dev/null 2>&1 && ! is_myfeed_pkg "$NAME" && return 0
     resolve_install_name "$NAME"
 }
 
@@ -260,11 +321,7 @@ resolve_install_name() {
         return 1
     fi
 
-    if policy_has_tag "$NAME" "@nikki"; then
-        echo "${NAME}@nikki"
-    else
-        echo "$NAME"
-    fi
+    echo "$NAME"
 }
 
 add_related_targets() {
@@ -333,13 +390,22 @@ remove_from_world() {
 }
 
 drop_unwanted_luci_pages() {
-    apk info 2>/dev/null | grep -E "$DROP_LUCI_RE" | while read PKG; do
+    DROP_LIST=/tmp/restore-drop-luci-list.txt
+    apk info 2>/dev/null | grep -E "$DROP_LUCI_RE" | sort -u > "$DROP_LIST" || true
+
+    [ -s "$DROP_LIST" ] || return 0
+
+    N="$(wc -l < "$DROP_LIST")"
+    log "批量移除 $N 个不需要的 LuCI 页面..."
+    cat "$DROP_LIST" | tee -a "$LOG"
+
+    apk del --force-broken-world $(cat "$DROP_LIST") >>"$LOG" 2>&1 || \
+        log "WARNING: batch luci page removal returned non-zero"
+
+    while read PKG; do
         [ -n "$PKG" ] || continue
-        log "强制移除不需要的 LuCI 页面: $PKG"
-        apk del --force-broken-world "$PKG" >>"$LOG" 2>&1 || \
-            log "WARNING: failed to remove $PKG"
         remove_from_world "$PKG"
-    done
+    done < "$DROP_LIST"
 }
 
 repair_luci_runtime() {
@@ -418,37 +484,6 @@ add_myfeed() {
     log "Added myfeed (tagged @myfeed): $MY_REPO"
 }
 
-add_nikki_feed_if_needed() {
-    list_has_pkg_pattern '^(nikki|luci-app-nikki|luci-i18n-nikki-|mihomo|mihomo-meta|mihomo-alpha)' || return 0
-
-    [ -f /etc/openwrt_release ] || return 0
-    . /etc/openwrt_release
-
-    case "$DISTRIB_RELEASE" in
-        *"24.10"*) NIKKI_BRANCH="openwrt-24.10" ;;
-        *"25.12"*) NIKKI_BRANCH="openwrt-25.12" ;;
-        "SNAPSHOT") NIKKI_BRANCH="SNAPSHOT" ;;
-        *)
-            log "SKIP Nikki feed: unsupported release $DISTRIB_RELEASE"
-            return 0
-            ;;
-    esac
-
-    NIKKI_BASE="https://nikkinikki.pages.dev"
-    NIKKI_REPO="$NIKKI_BASE/$NIKKI_BRANCH/$DISTRIB_ARCH/nikki/packages.adb"
-
-    mkdir -p /etc/apk/keys /etc/apk/repositories.d
-
-    wget -O /etc/apk/keys/nikki.pem "$NIKKI_BASE/public-key.pem" >>"$LOG" 2>&1 || {
-        log "WARNING: Nikki key download failed"
-        rm -f /etc/apk/keys/nikki.pem
-        return 0
-    }
-
-    echo "@nikki $NIKKI_REPO" > /etc/apk/repositories.d/20-nikki.list
-    log "Added Nikki feed (tagged @nikki): $NIKKI_REPO"
-}
-
 disable_repo_file() {
     FILE="$1"
     [ -f "$FILE" ] || return 0
@@ -459,18 +494,33 @@ disable_repo_file() {
 install_fakehttp_kmods_if_needed() {
     list_has_pkg_pattern '^(fakehttp|luci-app-fakehttp|luci-i18n-fakehttp-)' || [ -x /etc/init.d/fakehttp ] || return 0
 
+    KMODS=""
+    for PKG in kmod-nfnetlink-queue kmod-nft-queue; do
+        apk info -e "$PKG" >/dev/null 2>&1 || KMODS="$KMODS $PKG"
+    done
+
+    [ -n "$KMODS" ] || {
+        log "FakeHTTP NFQUEUE 模块已存在，跳过补装"
+        return 0
+    }
+
     log "补装 FakeHTTP 必需 NFQUEUE 模块..."
-    apk add --force-broken-world kmod-nfnetlink-queue kmod-nft-queue >>"$LOG" 2>&1 || {
+    apk add --force-broken-world $KMODS >>"$LOG" 2>&1 || {
         log "WARNING: FakeHTTP kmod install failed"
-        echo "kmod-nfnetlink-queue" >> "$FAILED"
-        echo "kmod-nft-queue" >> "$FAILED"
-        remove_from_world "kmod-nfnetlink-queue"
-        remove_from_world "kmod-nft-queue"
+        for PKG in $KMODS; do
+            echo "$PKG" >> "$FAILED"
+            remove_from_world "$PKG"
+        done
     }
 }
 
 install_oaf_kmods_if_needed() {
     list_has_pkg_pattern '^(appfilter|luci-app-oaf|luci-i18n-oaf-)' || [ -x /etc/init.d/appfilter ] || return 0
+
+    apk info -e kmod-oaf >/dev/null 2>&1 && {
+        log "应用过滤 OAF 模块已存在，跳过补装"
+        return 0
+    }
 
     log "补装应用过滤必需 OAF 模块..."
     apk add --force-broken-world kmod-oaf >>"$LOG" 2>&1 || {
@@ -486,6 +536,8 @@ install_oaf_kmods_if_needed() {
 
 log "== post restore reinstall start =="
 log "软件恢复白名单：截图保留的 LuCI 功能项"
+
+stash_app_configs
 
 if [ -s /root/restore-meta/world.skipped-by-allowlist ]; then
     log "以下旧 world 包不在白名单，已跳过："
@@ -514,7 +566,6 @@ mkdir -p /etc/apk/repositories.d
 
 log "添加当前固件匹配的自用 feed 和内核模块源..."
 add_myfeed
-add_nikki_feed_if_needed
 
 KERNEL_ID="$(sed -n 's/^kernel=//p' /rom/etc/apk/world)"
 if [ -n "$KERNEL_ID" ]; then
@@ -533,9 +584,8 @@ else
     if apk_update_safe >>"$LOG" 2>&1; then
         UPDATE_OK=1
     else
-        log "WARNING: apk update 仍失败，临时禁用 myfeed/Nikki 后重试"
+        log "WARNING: apk update 仍失败，临时禁用 myfeed 后重试"
         disable_repo_file /etc/apk/repositories.d/00-myfeed.list
-        disable_repo_file /etc/apk/repositories.d/20-nikki.list
 
         if apk_update_safe >>"$LOG" 2>&1; then
             UPDATE_OK=1
@@ -546,14 +596,15 @@ else
 fi
 
 if [ "$UPDATE_OK" = "1" ]; then
+    apk list -a > "$APK_INDEX" 2>/dev/null || : > "$APK_INDEX"
     install_fakehttp_kmods_if_needed
     install_oaf_kmods_if_needed
 fi
 
 INSTALL_LIST=/tmp/restore-install-list.txt
-ENFORCE_LIST=/tmp/restore-enforce-list.txt
+MYFEED_ENFORCE_LIST=/tmp/restore-myfeed-enforce-list.txt
 : > "$INSTALL_LIST"
-: > "$ENFORCE_LIST"
+: > "$MYFEED_ENFORCE_LIST"
 
 if [ "$UPDATE_OK" = "1" ] && [ -s "$LIST" ]; then
     TOTAL="$(wc -l < "$LIST")"
@@ -570,7 +621,17 @@ if [ "$UPDATE_OK" = "1" ] && [ -s "$LIST" ]; then
             continue
         }
 
-        apk info -e "$BASE" >/dev/null 2>&1 && continue
+        if apk info -e "$BASE" >/dev/null 2>&1 && ! is_myfeed_pkg "$BASE"; then
+            RELATED_TARGETS="$(add_related_targets "$BASE")" || {
+                echo "$BASE" >> "$NOT_IN_REPO"
+                remove_from_world "$BASE"
+                remove_from_world "$PKG"
+                continue
+            }
+
+            [ -n "$RELATED_TARGETS" ] && printf '%s\n' "$RELATED_TARGETS" | sed '/^$/d' >> "$INSTALL_LIST"
+            continue
+        fi
 
         if ! repo_has_pkg "$BASE"; then
             echo "$BASE" >> "$NOT_IN_REPO"
@@ -600,6 +661,8 @@ if [ "$UPDATE_OK" = "1" ] && [ -s "$LIST" ]; then
         sort -u "$INSTALL_LIST" > "$INSTALL_LIST.sorted"
         mv "$INSTALL_LIST.sorted" "$INSTALL_LIST"
 
+        grep -E '@myfeed$' "$INSTALL_LIST" > "$MYFEED_ENFORCE_LIST" || true
+
         N="$(wc -l < "$INSTALL_LIST")"
         log "批量安装 $N 个包（一次 apk add 解依赖）..."
         if ! apk add --force-broken-world $(cat "$INSTALL_LIST") >>"$LOG" 2>&1; then
@@ -617,36 +680,20 @@ if [ "$UPDATE_OK" = "1" ] && [ -s "$LIST" ]; then
     else
         log "没有需要新装的包"
     fi
+
+    if [ -s "$MYFEED_ENFORCE_LIST" ]; then
+        N="$(wc -l < "$MYFEED_ENFORCE_LIST")"
+        log "确认 $N 个自用包固定为 @myfeed..."
+        apk add --force-broken-world $(cat "$MYFEED_ENFORCE_LIST") >>"$LOG" 2>&1 || \
+            log "WARNING: myfeed pin returned non-zero"
+    fi
 else
     [ -s "$LIST" ] || log "没有找到软件包恢复清单：$LIST"
 fi
 
-if [ "$UPDATE_OK" = "1" ]; then
-    log "扫描已装包，构建 @myfeed / @nikki 强制覆盖清单..."
-    apk info 2>/dev/null | sort -u | while read PKG; do
-        [ -n "$PKG" ] || continue
-        case "$PKG" in
-            kmod-*) continue ;;
-        esac
-        POLICY="$(apk policy "$PKG" 2>/dev/null)"
-        case "$POLICY" in
-            *"@myfeed "*) echo "${PKG}@myfeed" >> "$ENFORCE_LIST" ;;
-            *"@nikki "*)  echo "${PKG}@nikki"  >> "$ENFORCE_LIST" ;;
-        esac
-    done
-
-    if [ -s "$ENFORCE_LIST" ]; then
-        N="$(wc -l < "$ENFORCE_LIST")"
-        log "强制覆盖 $N 个包到 @tag 版本（一次 apk add）..."
-        apk add --force-broken-world $(cat "$ENFORCE_LIST") >>"$LOG" 2>&1 || \
-            log "WARNING: 批量 enforce 返回非零，详情见 $LOG"
-    else
-        log "没有需要强制覆盖的包"
-    fi
-fi
-
 drop_unwanted_luci_pages
 repair_luci_runtime
+restore_app_configs
 
 log "复查失败列表，移除实际已经安装成功的软件包..."
 TMP_FAILED=/root/apk-install-failed.tmp
