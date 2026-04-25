@@ -10,7 +10,7 @@ add_myfeed() {
             ;;
     esac
 
-    MY_BASE="https://levi882.github.io/Openwrt_packages"
+    MY_BASE="https://openwrt-packages.pages.dev"
     MY_REPO="$MY_BASE/openwrt-25.12/$DISTRIB_ARCH/myfeed/packages.adb"
 
     mkdir -p /etc/apk/keys /etc/apk/repositories.d
