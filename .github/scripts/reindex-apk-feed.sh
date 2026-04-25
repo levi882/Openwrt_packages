@@ -69,7 +69,7 @@ docker run --rm \
   '
 
 if command -v sudo >/dev/null 2>&1; then
-  sudo chown -R "$(id -u):$(id -g)" "$repo_abs" || true
+  sudo chown -R "$(id -u):$(id -g)" "$repo_abs" "$sdk_cache_abs" || true
 fi
 
 test -s "${repo_dir}/packages.adb"
