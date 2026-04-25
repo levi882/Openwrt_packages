@@ -2,20 +2,29 @@
 
 Personal OpenWrt 25.12 `x86_64` APK feed for packages that are not in the firmware's default repositories.
 
-The workflow builds:
+The workflow builds these packages from source:
 
 - `lucky`
 - `luci-app-lucky`
-- `easytier`
-- `luci-app-easytier`
-- `smartdns`
-- `bandix`
-- `luci-app-bandix`
-- `rtp2httpd`
-- `luci-app-rtp2httpd`
 - `fakehttp`
 - `luci-app-fakehttp`
 - `luci-i18n-fakehttp-zh-cn`
+
+The workflow also downloads these official release APKs and adds them to the
+same signed feed:
+
+- `easytier`
+- `luci-app-easytier`
+- `luci-i18n-easytier-zh-cn`
+- `rtp2httpd`
+- `luci-app-rtp2httpd`
+- `luci-i18n-rtp2httpd-zh-cn`
+- `smartdns`
+- `luci-app-smartdns`
+- `luci-app-smartdns-lite`
+- `bandix`
+- `luci-app-bandix`
+- `luci-i18n-bandix-zh-cn`
 
 The published repository path is:
 

@@ -21,12 +21,19 @@ env:
   CF_PAGES_PROJECT: openwrt-packages
   # Change these to your own forks when you want to pin or patch the packages.
   LUCKY_REPO: https://github.com/levi882/luci-app-lucky.git
-  EASYTIER_REPO: https://github.com/EasyTier/luci-app-easytier.git
-  SMARTDNS_REPO: https://github.com/pymumu/smartdns.git
-  LUCI_BANDIX_REPO: https://github.com/timsaya/luci-app-bandix.git
-  BANDIX_REPO: https://github.com/timsaya/openwrt-bandix.git
-  RTP2HTTPD_REPO: https://github.com/stackia/rtp2httpd.git
   FAKEHTTP_REPO: https://github.com/levi882/FakeHTTP.git
+  EASYTIER_RELEASE_TAG: v2.6.1
+  EASYTIER_VERSION: 2.6.1
+  RTP2HTTPD_RELEASE_TAG: v3.11.0
+  RTP2HTTPD_VERSION: 3.11.0
+  RTP2HTTPD_PACKAGE_RELEASE: r1
+  SMARTDNS_RELEASE_TAG: Release47.1
+  SMARTDNS_VERSION: 1.2025.11.09-1443
+  BANDIX_RELEASE_TAG: v0.12.7
+  BANDIX_VERSION: 0.12.7-r1
+  LUCI_BANDIX_RELEASE_TAG: v0.12.6
+  LUCI_BANDIX_VERSION: 0.12.6-r1
+  LUCI_BANDIX_I18N_VERSION: 26.068.39505.1002c41
 
 jobs:
   build:
@@ -48,11 +55,28 @@ jobs:
           ARCH: ${{ env.OPENWRT_ARCH }}-${{ env.OPENWRT_BRANCH }}
           FEED_DIR: ${{ github.workspace }}/feed
           FEEDNAME: ${{ env.FEED_NAME }}
-          PACKAGES: lucky luci-app-lucky easytier luci-app-easytier smartdns bandix luci-app-bandix rtp2httpd luci-app-rtp2httpd fakehttp luci-app-fakehttp luci-i18n-fakehttp-zh-cn
+          PACKAGES: lucky luci-app-lucky fakehttp luci-app-fakehttp luci-i18n-fakehttp-zh-cn
           INDEX: 1
           PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
           NO_REFRESH_CHECK: true
           NO_SHFMT_CHECK: true
+
+      - name: add EasyTier release apks
+        run: bash .github/scripts/download-easytier-apks.sh "bin/packages/${OPENWRT_ARCH}/${FEED_NAME}"
+
+      - name: add rtp2httpd release apks
+        run: bash .github/scripts/download-rtp2httpd-apks.sh "bin/packages/${OPENWRT_ARCH}/${FEED_NAME}"
+
+      - name: add SmartDNS release apks
+        run: bash .github/scripts/download-smartdns-apks.sh "bin/packages/${OPENWRT_ARCH}/${FEED_NAME}"
+
+      - name: add Bandix release apks
+        run: bash .github/scripts/download-bandix-apks.sh "bin/packages/${OPENWRT_ARCH}/${FEED_NAME}"
+
+      - name: reindex apk feed
+        run: bash .github/scripts/reindex-apk-feed.sh "bin/packages/${OPENWRT_ARCH}/${FEED_NAME}"
+        env:
+          PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
 
       - name: prepare pages
         run: |
