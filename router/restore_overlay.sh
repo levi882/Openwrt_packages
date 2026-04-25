@@ -86,17 +86,14 @@ repo_has_pkg() {
     '
 }
 
-dump_pkgs_from_tag() {
-    TAG="$1"
-    OUT="$2"
-    [ -n "$TAG" ] || { : > "$OUT"; return 0; }
-    apk list -a 2>/dev/null | awk -v t="@$TAG" '
-        index($0, t) > 0 {
-            n = $1
-            sub(/-[0-9].*$/, "", n)
-            if (n != "") print n
-        }
-    ' | sort -u > "$OUT"
+resolve_install_name() {
+    NAME="${1%@*}"
+    POLICY="$(apk policy "$NAME" 2>/dev/null)"
+    case "$POLICY" in
+        *"@myfeed "*) echo "${NAME}@myfeed" ;;
+        *"@nikki "*)  echo "${NAME}@nikki" ;;
+        *)            echo "$NAME" ;;
+    esac
 }
 
 remove_from_world() {
@@ -251,31 +248,6 @@ fi
 if [ "$UPDATE_OK" = "1" ]; then
     install_fakehttp_kmods_if_needed
 fi
-
-MYFEED_PKGS=/tmp/restore-myfeed-pkgs.txt
-NIKKI_PKGS=/tmp/restore-nikki-pkgs.txt
-: > "$MYFEED_PKGS"
-: > "$NIKKI_PKGS"
-
-if [ "$UPDATE_OK" = "1" ]; then
-    log "枚举 myfeed / nikki 提供的包名，用于安装时强制走 @tag..."
-    [ -f /etc/apk/repositories.d/00-myfeed.list ] && \
-        dump_pkgs_from_tag myfeed "$MYFEED_PKGS"
-    [ -f /etc/apk/repositories.d/20-nikki.list ] && \
-        dump_pkgs_from_tag nikki "$NIKKI_PKGS"
-    log "myfeed 提供 $(wc -l < "$MYFEED_PKGS") 个包，nikki 提供 $(wc -l < "$NIKKI_PKGS") 个包"
-fi
-
-resolve_install_name() {
-    NAME="${1%@*}"
-    if [ -s "$MYFEED_PKGS" ] && grep -qxF "$NAME" "$MYFEED_PKGS"; then
-        echo "${NAME}@myfeed"
-    elif [ -s "$NIKKI_PKGS" ] && grep -qxF "$NAME" "$NIKKI_PKGS"; then
-        echo "${NAME}@nikki"
-    else
-        echo "$NAME"
-    fi
-}
 
 if [ "$UPDATE_OK" = "1" ] && [ -s "$LIST" ]; then
     TOTAL="$(wc -l < "$LIST")"
