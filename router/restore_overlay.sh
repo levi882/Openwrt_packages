@@ -249,42 +249,55 @@ if [ "$UPDATE_OK" = "1" ]; then
     install_fakehttp_kmods_if_needed
 fi
 
+INSTALL_LIST=/tmp/restore-install-list.txt
+ENFORCE_LIST=/tmp/restore-enforce-list.txt
+: > "$INSTALL_LIST"
+: > "$ENFORCE_LIST"
+
 if [ "$UPDATE_OK" = "1" ] && [ -s "$LIST" ]; then
     TOTAL="$(wc -l < "$LIST")"
-    i=0
+    log "扫描旧清单 $TOTAL 个包，构建批量安装目标..."
 
-    log "按旧清单恢复普通软件包，已过滤 kmod-*..."
     while read PKG; do
         [ -n "$PKG" ] || continue
-        i=$((i + 1))
-
         BASE="${PKG%@*}"
 
         apk info -e "$BASE" >/dev/null 2>&1 && continue
 
         if ! repo_has_pkg "$BASE"; then
-            log "SKIP not in repo: $BASE"
             echo "$BASE" >> "$NOT_IN_REPO"
             remove_from_world "$BASE"
             remove_from_world "$PKG"
             continue
         fi
 
-        TARGET="$(resolve_install_name "$BASE")"
-        log "[$i/$TOTAL] Installing $TARGET"
-        apk add --force-broken-world "$TARGET" >>"$LOG" 2>&1 || {
-            log "FAILED: $TARGET"
-            echo "$BASE" >> "$FAILED"
-            remove_from_world "$BASE"
-            remove_from_world "$PKG"
-        }
+        resolve_install_name "$BASE" >> "$INSTALL_LIST"
     done < "$LIST"
+
+    if [ -s "$INSTALL_LIST" ]; then
+        N="$(wc -l < "$INSTALL_LIST")"
+        log "批量安装 $N 个包（一次 apk add 解依赖）..."
+        if ! apk add --force-broken-world $(cat "$INSTALL_LIST") >>"$LOG" 2>&1; then
+            log "WARNING: 批量 apk add 返回非零，可能部分包失败，详情见 $LOG"
+        fi
+        while read TARGET; do
+            BASE="${TARGET%@*}"
+            apk info -e "$BASE" >/dev/null 2>&1 || {
+                log "FAILED: $TARGET"
+                echo "$BASE" >> "$FAILED"
+                remove_from_world "$BASE"
+                remove_from_world "$TARGET"
+            }
+        done < "$INSTALL_LIST"
+    else
+        log "没有需要新装的包"
+    fi
 else
     [ -s "$LIST" ] || log "没有找到软件包恢复清单：$LIST"
 fi
 
 if [ "$UPDATE_OK" = "1" ]; then
-    log "强制覆盖：把所有 @myfeed / @nikki 也提供的已装包改从对应 tag 安装..."
+    log "扫描已装包，构建 @myfeed / @nikki 强制覆盖清单..."
     apk info 2>/dev/null | sort -u | while read PKG; do
         [ -n "$PKG" ] || continue
         case "$PKG" in
@@ -292,18 +305,19 @@ if [ "$UPDATE_OK" = "1" ]; then
         esac
         POLICY="$(apk policy "$PKG" 2>/dev/null)"
         case "$POLICY" in
-            *"@myfeed "*)
-                log "Enforcing ${PKG}@myfeed"
-                apk add --force-broken-world "${PKG}@myfeed" >>"$LOG" 2>&1 || \
-                    log "FAILED enforce: ${PKG}@myfeed"
-                ;;
-            *"@nikki "*)
-                log "Enforcing ${PKG}@nikki"
-                apk add --force-broken-world "${PKG}@nikki" >>"$LOG" 2>&1 || \
-                    log "FAILED enforce: ${PKG}@nikki"
-                ;;
+            *"@myfeed "*) echo "${PKG}@myfeed" >> "$ENFORCE_LIST" ;;
+            *"@nikki "*)  echo "${PKG}@nikki"  >> "$ENFORCE_LIST" ;;
         esac
     done
+
+    if [ -s "$ENFORCE_LIST" ]; then
+        N="$(wc -l < "$ENFORCE_LIST")"
+        log "强制覆盖 $N 个包到 @tag 版本（一次 apk add）..."
+        apk add --force-broken-world $(cat "$ENFORCE_LIST") >>"$LOG" 2>&1 || \
+            log "WARNING: 批量 enforce 返回非零，详情见 $LOG"
+    else
+        log "没有需要强制覆盖的包"
+    fi
 fi
 
 log "复查失败列表，移除实际已经安装成功的软件包..."
