@@ -530,44 +530,15 @@ retry_missing_targets() {
     done < "$TARGET_LIST"
 }
 
-install_target_list() {
+install_target_group() {
     TARGET_LIST="$1"
     LABEL="$2"
     LIMIT="$3"
     RETRY="$4"
-    CHUNK_SIZE="${5:-0}"
 
     [ -s "$TARGET_LIST" ] || return 0
 
     N="$(wc -l < "$TARGET_LIST")"
-    if [ "$CHUNK_SIZE" -gt 0 ] 2>/dev/null; then
-        log "分批安装 $N 个${LABEL}（每批最多 $CHUNK_SIZE 个）..."
-        CHUNK="/tmp/restore-install-chunk.$$"
-        : > "$CHUNK"
-        COUNT=0
-        BATCH=1
-
-        while read TARGET; do
-            [ -n "$TARGET" ] || continue
-            echo "$TARGET" >> "$CHUNK"
-            COUNT=$((COUNT + 1))
-
-            if [ "$COUNT" -ge "$CHUNK_SIZE" ]; then
-                install_target_list "$CHUNK" "${LABEL} #$BATCH" "$LIMIT" "$RETRY" 0
-                : > "$CHUNK"
-                COUNT=0
-                BATCH=$((BATCH + 1))
-            fi
-        done < "$TARGET_LIST"
-
-        if [ -s "$CHUNK" ]; then
-            install_target_list "$CHUNK" "${LABEL} #$BATCH" "$LIMIT" "$RETRY" 0
-        fi
-
-        rm -f "$CHUNK"
-        return 0
-    fi
-
     log "批量安装 $N 个${LABEL}..."
     if ! apk_add_retry "$LIMIT" $(cat "$TARGET_LIST") >>"$LOG" 2>&1; then
         log "WARNING: ${LABEL}批量 apk add 返回非零，详情见 $LOG"
@@ -588,6 +559,48 @@ install_target_list() {
             remove_from_world "$TARGET"
         }
     done < "$TARGET_LIST"
+}
+
+install_target_list() {
+    TARGET_LIST="$1"
+    LABEL="$2"
+    LIMIT="$3"
+    RETRY="$4"
+    CHUNK_SIZE="${5:-0}"
+
+    [ -s "$TARGET_LIST" ] || return 0
+
+    if [ "$CHUNK_SIZE" -le 0 ] 2>/dev/null; then
+        install_target_group "$TARGET_LIST" "$LABEL" "$LIMIT" "$RETRY"
+        return 0
+    fi
+
+    TOTAL="$(wc -l < "$TARGET_LIST")"
+    log "分批安装 $TOTAL 个${LABEL}（每批最多 $CHUNK_SIZE 个）..."
+
+    BATCH_FILE="/tmp/restore-install-batch.$$.txt"
+    : > "$BATCH_FILE"
+    BATCH_COUNT=0
+    BATCH_NO=1
+
+    while read TARGET; do
+        [ -n "$TARGET" ] || continue
+        echo "$TARGET" >> "$BATCH_FILE"
+        BATCH_COUNT=$((BATCH_COUNT + 1))
+
+        if [ "$BATCH_COUNT" -ge "$CHUNK_SIZE" ]; then
+            install_target_group "$BATCH_FILE" "${LABEL} #$BATCH_NO" "$LIMIT" "$RETRY"
+            : > "$BATCH_FILE"
+            BATCH_COUNT=0
+            BATCH_NO=$((BATCH_NO + 1))
+        fi
+    done < "$TARGET_LIST"
+
+    if [ -s "$BATCH_FILE" ]; then
+        install_target_group "$BATCH_FILE" "${LABEL} #$BATCH_NO" "$LIMIT" "$RETRY"
+    fi
+
+    rm -f "$BATCH_FILE"
 }
 
 drop_unwanted_luci_pages() {
