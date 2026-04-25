@@ -332,29 +332,32 @@ def render_lucky(data):
         mkdir -p "$repo_dir"
 
         download_and_check() {{
-          local file="$1"
+          local source_file="$1"
           local sha256="$2"
+          local dest_file="$3"
+          local tmp_file="${{repo_dir}}/.${{source_file}}.download"
 
-          echo "Downloading ${{file}}"
-          curl -fL --retry 3 --retry-delay 2 -o "${{repo_dir}}/${{file}}" "${{base_url}}/${{file}}"
+          echo "Downloading ${{source_file}} -> ${{dest_file}}"
+          curl -fL --retry 3 --retry-delay 2 -o "$tmp_file" "${{base_url}}/${{source_file}}"
 
-          (
-            cd "$repo_dir"
-            printf '%s  %s\\n' "$sha256" "$file" | sha256sum -c -
-          )
+          printf '%s  %s\\n' "$sha256" "$tmp_file" | sha256sum -c -
+          mv "$tmp_file" "${{repo_dir}}/${{dest_file}}"
         }}
 
         download_and_check \\
           "lucky-${{lucky_version}}_x86_64.apk" \\
-          "{data['main_sha']}"
+          "{data['main_sha']}" \\
+          "lucky-${{lucky_version}}.apk"
 
         download_and_check \\
           "luci-app-lucky-${{luci_version}}_x86_64.apk" \\
-          "{data['luci_sha']}"
+          "{data['luci_sha']}" \\
+          "luci-app-lucky-${{luci_version}}.apk"
 
         download_and_check \\
           "luci-i18n-lucky-zh-cn-${{i18n_version}}_x86_64.apk" \\
-          "{data['i18n_sha']}"
+          "{data['i18n_sha']}" \\
+          "luci-i18n-lucky-zh-cn-${{i18n_version}}.apk"
         """,
     )
 
@@ -444,21 +447,22 @@ def render_rtp2httpd(data):
         mkdir -p "$repo_dir"
 
         download_and_check() {{
-          local file="$1"
+          local source_file="$1"
           local sha256="$2"
+          local dest_file="${{3:-$source_file}}"
+          local tmp_file="${{repo_dir}}/.${{source_file}}.download"
 
-          echo "Downloading ${{file}}"
-          curl -fL --retry 3 --retry-delay 2 -o "${{repo_dir}}/${{file}}" "${{base_url}}/${{file}}"
+          echo "Downloading ${{source_file}} -> ${{dest_file}}"
+          curl -fL --retry 3 --retry-delay 2 -o "$tmp_file" "${{base_url}}/${{source_file}}"
 
-          (
-            cd "$repo_dir"
-            printf '%s  %s\\n' "$sha256" "$file" | sha256sum -c -
-          )
+          printf '%s  %s\\n' "$sha256" "$tmp_file" | sha256sum -c -
+          mv "$tmp_file" "${{repo_dir}}/${{dest_file}}"
         }}
 
         download_and_check \\
           "rtp2httpd-${{version}}-${{release}}_x86_64.apk" \\
-          "{data['main_sha']}"
+          "{data['main_sha']}" \\
+          "rtp2httpd-${{version}}-${{release}}.apk"
 
         download_and_check \\
           "luci-app-rtp2httpd-${{version}}-${{release}}.apk" \\
@@ -490,29 +494,32 @@ def render_fakehttp(data):
         mkdir -p "$repo_dir"
 
         download_and_check() {{
-          local file="$1"
+          local source_file="$1"
           local sha256="$2"
+          local dest_file="$3"
+          local tmp_file="${{repo_dir}}/.${{source_file}}.download"
 
-          echo "Downloading ${{file}}"
-          curl -fL --retry 3 --retry-delay 2 -o "${{repo_dir}}/${{file}}" "${{base_url}}/${{file}}"
+          echo "Downloading ${{source_file}} -> ${{dest_file}}"
+          curl -fL --retry 3 --retry-delay 2 -o "$tmp_file" "${{base_url}}/${{source_file}}"
 
-          (
-            cd "$repo_dir"
-            printf '%s  %s\\n' "$sha256" "$file" | sha256sum -c -
-          )
+          printf '%s  %s\\n' "$sha256" "$tmp_file" | sha256sum -c -
+          mv "$tmp_file" "${{repo_dir}}/${{dest_file}}"
         }}
 
         download_and_check \\
           "${{prefix}}-fakehttp-${{version}}-${{package_release}}.apk" \\
-          "{data['main_sha']}"
+          "{data['main_sha']}" \\
+          "fakehttp-${{version}}-${{package_release}}.apk"
 
         download_and_check \\
           "${{prefix}}-luci-app-fakehttp-${{version}}-${{package_release}}.apk" \\
-          "{data['luci_sha']}"
+          "{data['luci_sha']}" \\
+          "luci-app-fakehttp-${{version}}-${{package_release}}.apk"
 
         download_and_check \\
           "${{prefix}}-luci-i18n-fakehttp-zh-cn-${{version}}-${{i18n_release}}.apk" \\
-          "{data['i18n_sha']}"
+          "{data['i18n_sha']}" \\
+          "luci-i18n-fakehttp-zh-cn-${{version}}-${{i18n_release}}.apk"
         """,
     )
 
@@ -529,32 +536,36 @@ def render_smartdns(data):
         version="${{SMARTDNS_VERSION:-{data['version']}}}"
 
         mkdir -p "$repo_dir"
+        apk_version="${{version%-*}}-r${{version##*-}}"
 
         download_and_check() {{
-          local file="$1"
+          local source_file="$1"
           local sha256="$2"
-          local url="https://github.com/pymumu/smartdns/releases/download/${{tag}}/${{file}}"
+          local dest_file="$3"
+          local url="https://github.com/pymumu/smartdns/releases/download/${{tag}}/${{source_file}}"
+          local tmp_file="${{repo_dir}}/.${{source_file}}.download"
 
-          echo "Downloading ${{file}}"
-          curl -fL --retry 3 --retry-delay 2 -o "${{repo_dir}}/${{file}}" "$url"
+          echo "Downloading ${{source_file}} -> ${{dest_file}}"
+          curl -fL --retry 3 --retry-delay 2 -o "$tmp_file" "$url"
 
-          (
-            cd "$repo_dir"
-            printf '%s  %s\\n' "$sha256" "$file" | sha256sum -c -
-          )
+          printf '%s  %s\\n' "$sha256" "$tmp_file" | sha256sum -c -
+          mv "$tmp_file" "${{repo_dir}}/${{dest_file}}"
         }}
 
         download_and_check \\
           "smartdns.${{version}}.x86_64-openwrt-all.apk" \\
-          "{data['main_sha']}"
+          "{data['main_sha']}" \\
+          "smartdns-${{apk_version}}.apk"
 
         download_and_check \\
           "luci-app-smartdns.${{version}}.all-luci-all.apk" \\
-          "{data['luci_sha']}"
+          "{data['luci_sha']}" \\
+          "luci-app-smartdns-${{apk_version}}.apk"
 
         download_and_check \\
           "luci-app-smartdns-lite.${{version}}.all-luci-lite-all.apk" \\
-          "{data['lite_sha']}"
+          "{data['lite_sha']}" \\
+          "luci-app-smartdns-lite-${{apk_version}}.apk"
         """,
     )
 
@@ -577,32 +588,37 @@ def render_bandix(data):
 
         download_and_check() {{
           local url="$1"
-          local file="$2"
+          local source_file="$2"
           local sha256="$3"
+          local dest_file="$4"
+          local tmp_file="${{repo_dir}}/.${{source_file}}.download"
 
-          echo "Downloading ${{file}}"
-          curl -fL --retry 3 --retry-delay 2 -o "${{repo_dir}}/${{file}}" "$url"
+          echo "Downloading ${{source_file}} -> ${{dest_file}}"
+          curl -fL --retry 3 --retry-delay 2 -o "$tmp_file" "$url"
 
-          (
-            cd "$repo_dir"
-            printf '%s  %s\\n' "$sha256" "$file" | sha256sum -c -
-          )
+          printf '%s  %s\\n' "$sha256" "$tmp_file" | sha256sum -c -
+          mv "$tmp_file" "${{repo_dir}}/${{dest_file}}"
         }}
+
+        i18n_apk_version="${{i18n_version%.*}}~${{i18n_version##*.}}"
 
         download_and_check \\
           "https://github.com/timsaya/openwrt-bandix/releases/download/${{bandix_tag}}/bandix-${{bandix_version}}_x86_64.apk" \\
           "bandix-${{bandix_version}}_x86_64.apk" \\
-          "{data['main_sha']}"
+          "{data['main_sha']}" \\
+          "bandix-${{bandix_version}}.apk"
 
         download_and_check \\
           "https://github.com/timsaya/luci-app-bandix/releases/download/${{luci_tag}}/luci-app-bandix-${{luci_version}}_all.apk" \\
           "luci-app-bandix-${{luci_version}}_all.apk" \\
-          "{data['luci_sha']}"
+          "{data['luci_sha']}" \\
+          "luci-app-bandix-${{luci_version}}.apk"
 
         download_and_check \\
           "https://github.com/timsaya/luci-app-bandix/releases/download/${{luci_tag}}/luci-i18n-bandix-zh-cn-${{i18n_version}}_all.apk" \\
           "luci-i18n-bandix-zh-cn-${{i18n_version}}_all.apk" \\
-          "{data['i18n_sha']}"
+          "{data['i18n_sha']}" \\
+          "luci-i18n-bandix-zh-cn-${{i18n_apk_version}}.apk"
         """,
     )
 

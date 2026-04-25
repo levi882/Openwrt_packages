@@ -10,21 +10,22 @@ base_url="https://github.com/stackia/rtp2httpd/releases/download/${tag}"
 mkdir -p "$repo_dir"
 
 download_and_check() {
-  local file="$1"
+  local source_file="$1"
   local sha256="$2"
+  local dest_file="${3:-$source_file}"
+  local tmp_file="${repo_dir}/.${source_file}.download"
 
-  echo "Downloading ${file}"
-  curl -fL --retry 3 --retry-delay 2 -o "${repo_dir}/${file}" "${base_url}/${file}"
+  echo "Downloading ${source_file} -> ${dest_file}"
+  curl -fL --retry 3 --retry-delay 2 -o "$tmp_file" "${base_url}/${source_file}"
 
-  (
-    cd "$repo_dir"
-    printf '%s  %s\n' "$sha256" "$file" | sha256sum -c -
-  )
+  printf '%s  %s\n' "$sha256" "$tmp_file" | sha256sum -c -
+  mv "$tmp_file" "${repo_dir}/${dest_file}"
 }
 
 download_and_check \
   "rtp2httpd-${version}-${release}_x86_64.apk" \
-  "1c870a54502940cd893be5b10dcf7e17fb27ea924fa38a522e1f0dfbef4d10fd"
+  "1c870a54502940cd893be5b10dcf7e17fb27ea924fa38a522e1f0dfbef4d10fd" \
+  "rtp2httpd-${version}-${release}.apk"
 
 download_and_check \
   "luci-app-rtp2httpd-${version}-${release}.apk" \
