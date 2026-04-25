@@ -1,0 +1,72 @@
+name: build-feed
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  OPENWRT_BRANCH: openwrt-25.12
+  OPENWRT_ARCH: x86_64
+  FEED_NAME: myfeed
+  # Change these to your own forks when you want to pin or patch the packages.
+  LUCKY_REPO: https://github.com/levi882/luci-app-lucky.git
+  EASYTIER_REPO: https://github.com/EasyTier/luci-app-easytier.git
+  SMARTDNS_REPO: https://github.com/pymumu/smartdns.git
+  LUCI_BANDIX_REPO: https://github.com/timsaya/luci-app-bandix.git
+  BANDIX_REPO: https://github.com/timsaya/openwrt-bandix.git
+  RTP2HTTPD_REPO: https://github.com/stackia/rtp2httpd.git
+  FAKEHTTP_REPO: https://github.com/levi882/FakeHTTP.git
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v6
+
+      - name: collect package sources
+        run: bash .github/scripts/collect-packages.sh
+
+      - name: build apk packages
+        uses: openwrt/gh-action-sdk@main
+        env:
+          ARCH: ${{ env.OPENWRT_ARCH }}-${{ env.OPENWRT_BRANCH }}
+          FEED_DIR: ${{ github.workspace }}/feed
+          FEEDNAME: ${{ env.FEED_NAME }}
+          PACKAGES: lucky luci-app-lucky easytier luci-app-easytier smartdns bandix luci-app-bandix rtp2httpd luci-app-rtp2httpd fakehttp luci-app-fakehttp luci-i18n-fakehttp-zh-cn
+          INDEX: 1
+          PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
+          NO_REFRESH_CHECK: true
+          NO_SHFMT_CHECK: true
+
+      - name: prepare pages
+        run: |
+          test -s public-key.pem
+          mkdir -p "public/${OPENWRT_BRANCH}/${OPENWRT_ARCH}"
+          cp -a "bin/packages/${OPENWRT_ARCH}/${FEED_NAME}" "public/${OPENWRT_BRANCH}/${OPENWRT_ARCH}/"
+          cp public-key.pem public/public-key.pem
+          find public -maxdepth 4 -type f | sort
+
+      - name: upload pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: public
+
+      - name: deploy to github pages
+        id: deployment
+        uses: actions/deploy-pages@v4
