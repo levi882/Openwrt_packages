@@ -389,6 +389,26 @@ remove_from_world() {
     mv /tmp/world.$$ /etc/apk/world
 }
 
+target_installed() {
+    BASE="${1%@*}"
+    apk info -e "$BASE" >/dev/null 2>&1
+}
+
+retry_missing_targets() {
+    TARGET_LIST="$1"
+    [ -s "$TARGET_LIST" ] || return 0
+
+    log "批量安装失败，逐个重试未安装的软件包..."
+    while read TARGET; do
+        [ -n "$TARGET" ] || continue
+        target_installed "$TARGET" && continue
+
+        log "RETRY: $TARGET"
+        apk add --force-broken-world "$TARGET" >>"$LOG" 2>&1 || \
+            log "RETRY FAILED: $TARGET"
+    done < "$TARGET_LIST"
+}
+
 drop_unwanted_luci_pages() {
     DROP_LIST=/tmp/restore-drop-luci-list.txt
     apk info 2>/dev/null | grep -E "$DROP_LUCI_RE" | sort -u > "$DROP_LIST" || true
@@ -602,9 +622,7 @@ if [ "$UPDATE_OK" = "1" ]; then
 fi
 
 INSTALL_LIST=/tmp/restore-install-list.txt
-MYFEED_ENFORCE_LIST=/tmp/restore-myfeed-enforce-list.txt
 : > "$INSTALL_LIST"
-: > "$MYFEED_ENFORCE_LIST"
 
 if [ "$UPDATE_OK" = "1" ] && [ -s "$LIST" ]; then
     TOTAL="$(wc -l < "$LIST")"
@@ -661,16 +679,15 @@ if [ "$UPDATE_OK" = "1" ] && [ -s "$LIST" ]; then
         sort -u "$INSTALL_LIST" > "$INSTALL_LIST.sorted"
         mv "$INSTALL_LIST.sorted" "$INSTALL_LIST"
 
-        grep -E '@myfeed$' "$INSTALL_LIST" > "$MYFEED_ENFORCE_LIST" || true
-
         N="$(wc -l < "$INSTALL_LIST")"
         log "批量安装 $N 个包（一次 apk add 解依赖）..."
         if ! apk add --force-broken-world $(cat "$INSTALL_LIST") >>"$LOG" 2>&1; then
             log "WARNING: 批量 apk add 返回非零，可能部分包失败，详情见 $LOG"
+            retry_missing_targets "$INSTALL_LIST"
         fi
         while read TARGET; do
             BASE="${TARGET%@*}"
-            apk info -e "$BASE" >/dev/null 2>&1 || {
+            target_installed "$TARGET" || {
                 log "FAILED: $TARGET"
                 echo "$BASE" >> "$FAILED"
                 remove_from_world "$BASE"
@@ -679,13 +696,6 @@ if [ "$UPDATE_OK" = "1" ] && [ -s "$LIST" ]; then
         done < "$INSTALL_LIST"
     else
         log "没有需要新装的包"
-    fi
-
-    if [ -s "$MYFEED_ENFORCE_LIST" ]; then
-        N="$(wc -l < "$MYFEED_ENFORCE_LIST")"
-        log "确认 $N 个自用包固定为 @myfeed..."
-        apk add --force-broken-world $(cat "$MYFEED_ENFORCE_LIST") >>"$LOG" 2>&1 || \
-            log "WARNING: myfeed pin returned non-zero"
     fi
 else
     [ -s "$LIST" ] || log "没有找到软件包恢复清单：$LIST"
