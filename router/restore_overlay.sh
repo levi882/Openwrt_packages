@@ -16,6 +16,14 @@ echo "输入 YES 继续："
 read CONFIRM
 [ "$CONFIRM" = "YES" ] || exit 0
 
+CURRENT_DISTFEEDS_TMP=/tmp/restore-current-distfeeds.list
+rm -f "$CURRENT_DISTFEEDS_TMP"
+if [ -f /etc/apk/repositories.d/distfeeds.list ]; then
+    cp /etc/apk/repositories.d/distfeeds.list "$CURRENT_DISTFEEDS_TMP"
+elif [ -f /rom/etc/apk/repositories.d/distfeeds.list ]; then
+    cp /rom/etc/apk/repositories.d/distfeeds.list "$CURRENT_DISTFEEDS_TMP"
+fi
+
 echo "校验备份包..."
 gzip -t "$BACKUP_FILE"
 tar -tzf "$BACKUP_FILE" >/dev/null
@@ -26,6 +34,9 @@ tar -xzf "$BACKUP_FILE" -C /
 
 UP=/overlay/upper
 mkdir -p "$UP/root/restore-meta"
+
+[ -s "$CURRENT_DISTFEEDS_TMP" ] && \
+    cp "$CURRENT_DISTFEEDS_TMP" "$UP/root/restore-meta/distfeeds.current-system.list"
 
 ALLOW_RE='^(luci-app-(smartdns|smartdns-lite|dockerman|lucky|vlmcsd|fakehttp|watchcat|oaf|nikki|omcproxy|rtp2httpd|samba4|webdav|easytier|bandix|firewall|upnp|netspeedtest|speedtest|fastnet|package-manager|opkg|attendedsysupgrade|ota|diskman|ttyd|commands|quickfile|filebrowser|filemanager|fileassistant|ramfree|autoreboot|timedreboot|aurora-config)|luci-i18n-(smartdns|smartdns-lite|fakehttp|lucky|easytier|rtp2httpd|bandix|nikki|vlmcsd|watchcat|oaf|samba4|webdav|omcproxy|dockerman|firewall|upnp|netspeedtest|speedtest|fastnet|package-manager|opkg|attendedsysupgrade|ota|diskman|ttyd|commands|quickfile|filebrowser|filemanager|fileassistant|ramfree|autoreboot|timedreboot|aurora-config)-zh-cn|luci-i18n-app-omcproxy-zh-cn|luci-theme-aurora|python3|python3-requests|tcpdump|curl|bash)$'
 SKIPPED_BY_ALLOW="$UP/root/restore-meta/world.skipped-by-allowlist"
@@ -208,11 +219,12 @@ LIST=/root/apk-world.restore-list
 APK_INDEX=/tmp/restore-apk-list.txt
 APP_CONFIG_STASH=/root/restore-meta/app-config-stash.tar.gz
 SERVICE_STATE=/root/restore-meta/network-addon-services.state
-APK_ADD_BATCH_TIMEOUT="${APK_ADD_BATCH_TIMEOUT:-900}"
+APK_ADD_BATCH_TIMEOUT="${APK_ADD_BATCH_TIMEOUT:-300}"
 APK_ADD_LUCI_TIMEOUT="${APK_ADD_LUCI_TIMEOUT:-300}"
 APK_ADD_RETRY_TIMEOUT="${APK_ADD_RETRY_TIMEOUT:-120}"
 APK_ADD_ATTEMPTS="${APK_ADD_ATTEMPTS:-3}"
 APK_ADD_RETRY_SLEEP="${APK_ADD_RETRY_SLEEP:-5}"
+APK_ADD_CORE_CHUNK_SIZE="${APK_ADD_CORE_CHUNK_SIZE:-6}"
 APK_RETRY_LUCI="${APK_RETRY_LUCI:-0}"
 ALLOW_RE='^(luci-app-(smartdns|smartdns-lite|dockerman|lucky|vlmcsd|fakehttp|watchcat|oaf|nikki|omcproxy|rtp2httpd|samba4|webdav|easytier|bandix|firewall|upnp|netspeedtest|speedtest|fastnet|package-manager|opkg|attendedsysupgrade|ota|diskman|ttyd|commands|quickfile|filebrowser|filemanager|fileassistant|ramfree|autoreboot|timedreboot|aurora-config)|luci-i18n-(smartdns|smartdns-lite|fakehttp|lucky|easytier|rtp2httpd|bandix|nikki|vlmcsd|watchcat|oaf|samba4|webdav|omcproxy|dockerman|firewall|upnp|netspeedtest|speedtest|fastnet|package-manager|opkg|attendedsysupgrade|ota|diskman|ttyd|commands|quickfile|filebrowser|filemanager|fileassistant|ramfree|autoreboot|timedreboot|aurora-config)-zh-cn|luci-i18n-app-omcproxy-zh-cn|luci-theme-aurora|python3|python3-requests|tcpdump|curl|bash)$'
 DROP_LUCI_RE='^luci-(app|i18n)-(wolplus|zerotier|sqm|socat|qbittorrent|passwall|passwall2|openlist|openlist2|natmap|nlbwmon|mosdns|homeproxy|frpc|eqos|argon-config|airplay2|airconnect|usb-printer|mentohust|ddns|ssr-plus|openclash)(-|$)|^luci-proto-wireguard$|^luci-i18n-proto-wireguard-'
@@ -500,10 +512,39 @@ install_target_list() {
     LABEL="$2"
     LIMIT="$3"
     RETRY="$4"
+    CHUNK_SIZE="${5:-0}"
 
     [ -s "$TARGET_LIST" ] || return 0
 
     N="$(wc -l < "$TARGET_LIST")"
+    if [ "$CHUNK_SIZE" -gt 0 ] 2>/dev/null; then
+        log "分批安装 $N 个${LABEL}（每批最多 $CHUNK_SIZE 个）..."
+        CHUNK="/tmp/restore-install-chunk.$$"
+        : > "$CHUNK"
+        COUNT=0
+        BATCH=1
+
+        while read TARGET; do
+            [ -n "$TARGET" ] || continue
+            echo "$TARGET" >> "$CHUNK"
+            COUNT=$((COUNT + 1))
+
+            if [ "$COUNT" -ge "$CHUNK_SIZE" ]; then
+                install_target_list "$CHUNK" "${LABEL} #$BATCH" "$LIMIT" "$RETRY" 0
+                : > "$CHUNK"
+                COUNT=0
+                BATCH=$((BATCH + 1))
+            fi
+        done < "$TARGET_LIST"
+
+        if [ -s "$CHUNK" ]; then
+            install_target_list "$CHUNK" "${LABEL} #$BATCH" "$LIMIT" "$RETRY" 0
+        fi
+
+        rm -f "$CHUNK"
+        return 0
+    fi
+
     log "批量安装 $N 个${LABEL}..."
     if ! apk_add_retry "$LIMIT" $(cat "$TARGET_LIST") >>"$LOG" 2>&1; then
         log "WARNING: ${LABEL}批量 apk add 返回非零，详情见 $LOG"
@@ -695,8 +736,11 @@ drop_unwanted_luci_pages
 
 mkdir -p /etc/apk/repositories.d
 
-[ -f /rom/etc/apk/repositories.d/distfeeds.list ] && \
+if [ -s /root/restore-meta/distfeeds.current-system.list ]; then
+    cp /root/restore-meta/distfeeds.current-system.list /etc/apk/repositories.d/distfeeds.list
+elif [ -f /rom/etc/apk/repositories.d/distfeeds.list ]; then
     cp /rom/etc/apk/repositories.d/distfeeds.list /etc/apk/repositories.d/distfeeds.list
+fi
 
 [ -s /root/restore-meta/customfeeds.list ] && \
     cp /root/restore-meta/customfeeds.list /etc/apk/repositories.d/customfeeds.list
@@ -809,7 +853,7 @@ if [ "$UPDATE_OK" = "1" ] && [ -s "$LIST" ]; then
             fi
         done < "$INSTALL_LIST"
 
-        install_target_list "$INSTALL_CORE_LIST" "核心/后端包" "$APK_ADD_BATCH_TIMEOUT" "1"
+        install_target_list "$INSTALL_CORE_LIST" "核心/后端包" "$APK_ADD_BATCH_TIMEOUT" "1" "$APK_ADD_CORE_CHUNK_SIZE"
         install_target_list "$INSTALL_LUCI_LIST" "LuCI 页面包" "$APK_ADD_LUCI_TIMEOUT" "$APK_RETRY_LUCI"
     else
         log "没有需要新装的包"
