@@ -46,6 +46,17 @@ cp -a .package-src/fakehttp/LICENSE feed/fakehttp/srcroot/LICENSE
 sed -i 's#include ../../lang/rust/rust-package.mk#include $(TOPDIR)/feeds/packages/lang/rust/rust-package.mk#' \
   feed/smartdns/Makefile
 
+# We only build the SmartDNS daemon package here. Upstream defines an extra
+# smartdns-webui download in the same Makefile for smartdns-ui; that tarball can
+# change independently and fail the daemon-only download step due to hash drift.
+tmp_makefile="$(mktemp)"
+awk '
+  /^define Download\/smartdns-webui$/ { skip = 1; next }
+  skip && /^\$\(eval \$\(call Download,smartdns-webui\)\)$/ { skip = 0; next }
+  !skip { print }
+' feed/smartdns/Makefile > "$tmp_makefile"
+mv "$tmp_makefile" feed/smartdns/Makefile
+
 # rtp2httpd and FakeHTTP package Makefiles are designed to live inside their
 # source repositories. Keep source copies inside the package directory and point
 # Build/Prepare at those copies for this standalone feed.
