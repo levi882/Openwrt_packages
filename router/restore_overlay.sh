@@ -510,6 +510,25 @@ target_installed() {
     apk info -e "$BASE" >/dev/null 2>&1
 }
 
+remove_target_from_world_if_missing() {
+    TARGET="$1"
+    BASE="${TARGET%@*}"
+
+    target_installed "$TARGET" && return 0
+    remove_from_world "$BASE"
+    remove_from_world "$TARGET"
+}
+
+remove_missing_targets_from_world() {
+    TARGET_LIST="$1"
+    [ -s "$TARGET_LIST" ] || return 0
+
+    while read TARGET; do
+        [ -n "$TARGET" ] || continue
+        remove_target_from_world_if_missing "$TARGET"
+    done < "$TARGET_LIST"
+}
+
 is_luci_target() {
     BASE="${1%@*}"
     echo "$BASE" | grep -Eq '^luci-(app|i18n)-'
@@ -520,13 +539,18 @@ retry_missing_targets() {
     [ -s "$TARGET_LIST" ] || return 0
 
     log "批量安装失败，逐个重试未安装的软件包..."
+    remove_missing_targets_from_world "$TARGET_LIST"
+
     while read TARGET; do
         [ -n "$TARGET" ] || continue
         target_installed "$TARGET" && continue
 
         log "RETRY: $TARGET"
-        apk_add_retry "$APK_ADD_RETRY_TIMEOUT" "$TARGET" >>"$LOG" 2>&1 || \
+        remove_target_from_world_if_missing "$TARGET"
+        apk_add_retry "$APK_ADD_RETRY_TIMEOUT" "$TARGET" >>"$LOG" 2>&1 || {
             log "RETRY FAILED: $TARGET"
+            remove_target_from_world_if_missing "$TARGET"
+        }
     done < "$TARGET_LIST"
 }
 
@@ -542,6 +566,7 @@ install_target_group() {
     log "批量安装 $N 个${LABEL}..."
     if ! apk_add_retry "$LIMIT" $(cat "$TARGET_LIST") >>"$LOG" 2>&1; then
         log "WARNING: ${LABEL}批量 apk add 返回非零，详情见 $LOG"
+        remove_missing_targets_from_world "$TARGET_LIST"
         if [ "$RETRY" = "1" ]; then
             retry_missing_targets "$TARGET_LIST"
         else
