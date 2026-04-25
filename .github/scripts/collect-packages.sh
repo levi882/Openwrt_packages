@@ -45,6 +45,8 @@ cp -a .package-src/fakehttp/LICENSE feed/fakehttp/srcroot/LICENSE
 # cloned packages feed instead.
 sed -i 's#include ../../lang/rust/rust-package.mk#include $(TOPDIR)/feeds/packages/lang/rust/rust-package.mk#' \
   feed/smartdns/Makefile
+sed -i 's#^PKG_MIRROR_HASH:=skip#PKG_MIRROR_HASH:=6cd942a4f289ed650be2bc753f2c1b4279d81efcbd823fd3c220251abfdb102d#' \
+  feed/smartdns/Makefile
 
 # We only build the SmartDNS daemon package here. Upstream defines an extra
 # smartdns-webui download in the same Makefile for smartdns-ui; that tarball can
