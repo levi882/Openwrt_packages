@@ -22,11 +22,12 @@ cleanup() {
 trap cleanup EXIT
 
 printf '%s\n' "$PRIVATE_KEY" > "$key_file"
-chmod 600 "$key_file"
+chmod 644 "$key_file"
 
 docker pull "$sdk_image"
 
 docker run --rm \
+  --user 0:0 \
   --entrypoint /bin/bash \
   -v "${repo_abs}:/repo" \
   -v "${key_file}:/tmp/private-key.pem:ro" \
