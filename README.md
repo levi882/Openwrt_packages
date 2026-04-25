@@ -2,23 +2,20 @@
 
 Personal OpenWrt 25.12 `x86_64` APK feed for packages that are not in the firmware's default repositories.
 
-The workflow builds these packages from source:
+The workflow downloads these release APKs and adds them to the same signed feed:
 
 - `lucky`
 - `luci-app-lucky`
-- `fakehttp`
-- `luci-app-fakehttp`
-- `luci-i18n-fakehttp-zh-cn`
-
-The workflow also downloads these official release APKs and adds them to the
-same signed feed:
-
+- `luci-i18n-lucky-zh-cn`
 - `easytier`
 - `luci-app-easytier`
 - `luci-i18n-easytier-zh-cn`
 - `rtp2httpd`
 - `luci-app-rtp2httpd`
 - `luci-i18n-rtp2httpd-zh-cn`
+- `fakehttp`
+- `luci-app-fakehttp`
+- `luci-i18n-fakehttp-zh-cn`
 - `smartdns`
 - `luci-app-smartdns`
 - `luci-app-smartdns-lite`
@@ -65,6 +62,12 @@ PRIVATE_KEY
 ## Build
 
 Push to `main`, or run the `build-feed` workflow manually.
+
+## Update Release APK Pins
+
+Run the `update-release-apks` workflow manually when you want to check for new
+upstream releases. It also runs weekly and opens a pull request when versions or
+sha256 pins changed. Merge that pull request to trigger the normal feed build.
 
 After a successful run, the router can use:
 

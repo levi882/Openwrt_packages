@@ -2,6 +2,7 @@
 set -euo pipefail
 
 repo_dir="${1:?usage: reindex-apk-feed.sh <feed-dir>}"
+sdk_image="${SDK_IMAGE:-ghcr.io/openwrt/sdk:${OPENWRT_ARCH:-x86_64}-${OPENWRT_BRANCH:-openwrt-25.12}}"
 
 [ -n "${PRIVATE_KEY:-}" ] || {
   echo "PRIVATE_KEY secret is required to sign packages.adb" >&2
@@ -23,13 +24,16 @@ trap cleanup EXIT
 printf '%s\n' "$PRIVATE_KEY" > "$key_file"
 chmod 600 "$key_file"
 
+docker pull "$sdk_image"
+
 docker run --rm \
   --entrypoint /bin/bash \
   -v "${repo_abs}:/repo" \
   -v "${key_file}:/tmp/private-key.pem:ro" \
-  sdk \
+  "$sdk_image" \
   -lc '
     set -euo pipefail
+    [ ! -f setup.sh ] || bash setup.sh
     cd /repo
     shopt -s nullglob
     apks=(*.apk)
@@ -49,6 +53,10 @@ docker run --rm \
 
     /builder/staging_dir/host/bin/apk adbdump --format json packages.adb >/dev/null
   '
+
+if command -v sudo >/dev/null 2>&1; then
+  sudo chown -R "$(id -u):$(id -g)" "$repo_abs" || true
+fi
 
 test -s "${repo_dir}/packages.adb"
 echo "Reindexed $(find "$repo_dir" -maxdepth 1 -name "*.apk" | wc -l) APK packages in ${repo_dir}"

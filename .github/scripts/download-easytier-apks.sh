@@ -4,7 +4,7 @@ set -euo pipefail
 repo_dir="${1:?usage: download-easytier-apks.sh <feed-dir>}"
 tag="${EASYTIER_RELEASE_TAG:-v2.6.1}"
 version="${EASYTIER_VERSION:-2.6.1}"
-archive="EasyTier-${version}-x86_64-SNAPSHOT.zip"
+archive="EasyTier-${tag}-x86_64-SNAPSHOT.zip"
 archive_sha256="8d15ef6d62a1f393537f96bc09cbb4cd5ad950ef6a6394bfeb978a2fdd269d2f"
 url="https://github.com/EasyTier/luci-app-easytier/releases/download/${tag}/${archive}"
 tmp_dir="$(mktemp -d)"

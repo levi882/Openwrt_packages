@@ -1,0 +1,42 @@
+name: update-release-apks
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 20 * * 6"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: update-release-apks
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v6
+
+      - name: update release APK pins
+        run: python3 .github/scripts/update-release-apks.py
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: check generated changes
+        run: git diff --check
+
+      - name: create pull request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: automation/update-release-apks
+          delete-branch: true
+          commit-message: Update release APK pins
+          title: Update release APK pins
+          body: |
+            Automated refresh of release APK versions and sha256 pins.
+
+            After merging, the normal `build-feed` workflow will rebuild and publish the signed feed.

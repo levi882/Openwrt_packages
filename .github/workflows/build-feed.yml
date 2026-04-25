@@ -19,14 +19,20 @@ env:
   OPENWRT_ARCH: x86_64
   FEED_NAME: myfeed
   CF_PAGES_PROJECT: openwrt-packages
-  # Change these to your own forks when you want to pin or patch the packages.
-  LUCKY_REPO: https://github.com/levi882/luci-app-lucky.git
-  FAKEHTTP_REPO: https://github.com/levi882/FakeHTTP.git
+  LUCKY_RELEASE_TAG: v2.27.2
+  LUCKY_VERSION: 2.27.2-r1
+  LUCI_LUCKY_VERSION: 2.2.2-r1
+  LUCI_LUCKY_I18N_VERSION: 0
   EASYTIER_RELEASE_TAG: v2.6.1
   EASYTIER_VERSION: 2.6.1
   RTP2HTTPD_RELEASE_TAG: v3.11.0
   RTP2HTTPD_VERSION: 3.11.0
   RTP2HTTPD_PACKAGE_RELEASE: r1
+  FAKEHTTP_RELEASE_TAG: v0.9.18
+  FAKEHTTP_OPENWRT_RELEASE: 25.12.2
+  FAKEHTTP_VERSION: 0.9.18
+  FAKEHTTP_PACKAGE_RELEASE: r2
+  FAKEHTTP_I18N_RELEASE: r1
   SMARTDNS_RELEASE_TAG: Release47.1
   SMARTDNS_VERSION: 1.2025.11.09-1443
   BANDIX_RELEASE_TAG: v0.12.7
@@ -46,26 +52,20 @@ jobs:
       - name: checkout
         uses: actions/checkout@v6
 
-      - name: collect package sources
-        run: bash .github/scripts/collect-packages.sh
+      - name: create feed directory
+        run: mkdir -p "bin/packages/${OPENWRT_ARCH}/${FEED_NAME}"
 
-      - name: build apk packages
-        uses: openwrt/gh-action-sdk@main
-        env:
-          ARCH: ${{ env.OPENWRT_ARCH }}-${{ env.OPENWRT_BRANCH }}
-          FEED_DIR: ${{ github.workspace }}/feed
-          FEEDNAME: ${{ env.FEED_NAME }}
-          PACKAGES: lucky luci-app-lucky fakehttp luci-app-fakehttp luci-i18n-fakehttp-zh-cn
-          INDEX: 1
-          PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
-          NO_REFRESH_CHECK: true
-          NO_SHFMT_CHECK: true
+      - name: add Lucky release apks
+        run: bash .github/scripts/download-lucky-apks.sh "bin/packages/${OPENWRT_ARCH}/${FEED_NAME}"
 
       - name: add EasyTier release apks
         run: bash .github/scripts/download-easytier-apks.sh "bin/packages/${OPENWRT_ARCH}/${FEED_NAME}"
 
       - name: add rtp2httpd release apks
         run: bash .github/scripts/download-rtp2httpd-apks.sh "bin/packages/${OPENWRT_ARCH}/${FEED_NAME}"
+
+      - name: add FakeHTTP release apks
+        run: bash .github/scripts/download-fakehttp-apks.sh "bin/packages/${OPENWRT_ARCH}/${FEED_NAME}"
 
       - name: add SmartDNS release apks
         run: bash .github/scripts/download-smartdns-apks.sh "bin/packages/${OPENWRT_ARCH}/${FEED_NAME}"
