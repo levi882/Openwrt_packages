@@ -79,7 +79,7 @@ After a successful run, the router can use:
 ```sh
 MYFEED_BASE=https://openwrt-packages.pages.dev
 wget -O /etc/apk/keys/myfeed.pem "$MYFEED_BASE/public-key.pem"
-echo "@myfeed $MYFEED_BASE/openwrt-25.12/x86_64/myfeed/packages.adb" > /etc/apk/repositories.d/00-myfeed.list
+echo "$MYFEED_BASE/openwrt-25.12/x86_64/myfeed/packages.adb" > /etc/apk/repositories.d/00-myfeed.list
 apk update
 ```
 
@@ -107,6 +107,35 @@ the restored proxy path. The first restore stage preserves the dependency
 closure for that bootstrap path from the backup APK database, while still
 dropping old `kernel=` and `kmod-*` state.
 
+The restore step uses tagged `@myfeed` internally so it can force selected
+packages to come from the personal feed. After the post-restore reinstall
+finishes, it switches `00-myfeed.list` back to an untagged repository by
+default. That makes LuCI's package manager install buttons work with myfeed
+packages, because LuCI calls `apk add <package>` rather than
+`apk add <package>@myfeed`. If the untagged feed makes `apk update` fail, the
+script rolls back to tagged `@myfeed`; if that still fails, it disables myfeed
+so official package installs keep working. The compatibility step also removes
+stale `@myfeed` suffixes from `/etc/apk/world`, otherwise ordinary installs can
+fail with "repository tag ... does not exist" after changing the feed mode.
+When myfeed has to be disabled, myfeed-only root packages are removed from
+`/etc/apk/world` as well, leaving already-installed files in place but avoiding
+future `apk add` failures caused by unavailable myfeed packages.
+
+Packages that still fail after restore are quarantined out of `/etc/apk/world`
+before the script exits, including tagged or version-constrained variants. This
+keeps later LuCI or SSH installs from being blocked by failed restore targets.
+
+By default, `smartdns`, `lucky`, and their LuCI packages are treated as
+backup-kept runtime packages. The first restore stage preserves their package
+files from the backup, and the post-restore reinstall step skips them so `apk
+add` does not overwrite the restored binaries or configs. Override the default
+list with `RESTORE_KEEP_BACKUP_PACKAGES` if needed.
+
+The first stage also keeps LuCI files for personal-feed packages as a fallback.
+If myfeed is unreachable during post-restore, those packages are left in place
+from the backup and removed from `/etc/apk/world` instead of being reported as
+missing repository packages.
+
 Disable that behavior only for troubleshooting:
 
 ```sh
@@ -117,5 +146,9 @@ Advanced debugging knobs:
 
 ```sh
 KEEP_PROXY_UP=0 /root/post_restore_reinstall.sh
+RESTORE_LUCI_WRAPPER=0 /root/post_restore_reinstall.sh
+MYFEED_LUCI_COMPAT=0 /root/post_restore_reinstall.sh
+RESTORE_KEEP_BACKUP_PACKAGES="smartdns lucky luci-app-lucky" /root/post_restore_reinstall.sh
+RESTORE_KEEP_MYFEED_WHEN_FEED_DOWN=0 /root/post_restore_reinstall.sh
 RESTORE_BOOTSTRAP_ROOTS="smartdns nikki" ./router/restore_overlay.sh overlay_backup.tar.gz
 ```
