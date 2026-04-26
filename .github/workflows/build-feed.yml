@@ -8,10 +8,9 @@ on:
 
 permissions:
   contents: read
-  deployments: write
 
 concurrency:
-  group: pages
+  group: build-feed
   cancel-in-progress: false
 
 env:
@@ -46,9 +45,6 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
-    environment:
-      name: cloudflare-pages
-      url: ${{ steps.deploy.outputs.deployment-url }}
 
     steps:
       - name: checkout
@@ -99,10 +95,8 @@ jobs:
           find public -maxdepth 4 -type f | sort
 
       - name: deploy to cloudflare pages
-        id: deploy
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: pages deploy public --project-name=${{ env.CF_PAGES_PROJECT }}
-          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
