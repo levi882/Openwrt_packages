@@ -77,11 +77,45 @@ sha256 pins changed. Merge that pull request to trigger the normal feed build.
 After a successful run, the router can use:
 
 ```sh
-wget -O /etc/apk/keys/myfeed.pem https://openwrt-packages.pages.dev/public-key.pem
-echo "https://openwrt-packages.pages.dev/openwrt-25.12/x86_64/myfeed/packages.adb" > /etc/apk/repositories.d/00-myfeed.list
+MYFEED_BASE=https://openwrt-packages.pages.dev
+wget -O /etc/apk/keys/myfeed.pem "$MYFEED_BASE/public-key.pem"
+echo "@myfeed $MYFEED_BASE/openwrt-25.12/x86_64/myfeed/packages.adb" > /etc/apk/repositories.d/00-myfeed.list
 apk update
 ```
 
 ## Restore Script
 
-Copy `router/add-myfeed.sh` into the `POSTEOF` section of your restore script, then call `add_myfeed` before `apk update`.
+`router/restore_overlay.sh` probes `MYFEED_BASES` in order and writes the first
+reachable mirror as tagged `@myfeed`. If Cloudflare Pages is unstable, mirror
+the generated `public/` tree to a domestic HTTPS site, keeping this layout:
+
+```text
+public-key.pem
+openwrt-25.12/x86_64/myfeed/packages.adb
+openwrt-25.12/x86_64/myfeed/*.apk
+```
+
+Then prefer that mirror during restore:
+
+```sh
+MYFEED_BASES="https://core3.cooluc.com/openwrt-packages https://openwrt-packages.pages.dev" /root/post_restore_reinstall.sh
+```
+
+During the post-restore reinstall step, the script tries to start `smartdns`
+and `nikki` before `apk update`, so router-originated package traffic can use
+the restored proxy path. The first restore stage preserves the dependency
+closure for that bootstrap path from the backup APK database, while still
+dropping old `kernel=` and `kmod-*` state.
+
+Disable that behavior only for troubleshooting:
+
+```sh
+RESTORE_PROXY_UP=0 /root/post_restore_reinstall.sh
+```
+
+Advanced debugging knobs:
+
+```sh
+KEEP_PROXY_UP=0 /root/post_restore_reinstall.sh
+RESTORE_BOOTSTRAP_ROOTS="smartdns nikki" ./router/restore_overlay.sh overlay_backup.tar.gz
+```
