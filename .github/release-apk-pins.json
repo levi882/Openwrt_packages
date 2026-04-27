@@ -35,7 +35,7 @@
     "i18n_version": "0",
     "luci_sha": "42822bf7457fb541a259c0ace945a3f0c19e701113c01d07f1d9afa3cb56a598",
     "luci_version": "2.2.2-r1",
-    "main_sha": "af4722252a9e2de95248ea3e38a9636cd5bf3da1b6340807912a11f586cbadb2",
+    "main_sha": "dfce70032fc72cbd3025d0a678e8974c403ee3f972e5f8d87b0b2e96e634147d",
     "tag": "v3.0.0_beta5",
     "version": "3.0.0_beta5-r1"
   },
