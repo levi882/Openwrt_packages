@@ -6,15 +6,13 @@ import os
 import re
 import sys
 import tarfile
-import textwrap
 import urllib.request
 import zipfile
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
-WORKFLOW = ROOT / ".github" / "workflows" / "build-feed.yml"
-SCRIPT_DIR = ROOT / ".github" / "scripts"
+PINS = ROOT / ".github" / "release-apk-pins.json"
 TOKEN = os.environ.get("GITHUB_TOKEN")
 
 
@@ -75,25 +73,18 @@ def pick_apk(apks, pattern, label):
     return matches[0]
 
 
-def update_env(updates):
-    text = WORKFLOW.read_text(encoding="utf-8")
-    for name, value in updates.items():
-        pattern = rf"^(  {re.escape(name)}: ).*$"
-        text, count = re.subn(pattern, rf"\g<1>{value}", text, flags=re.MULTILINE)
-        if count != 1:
-            raise SystemExit(f"Could not update env value {name} in {WORKFLOW}")
-    WORKFLOW.write_text(text, encoding="utf-8", newline="\n")
+def read_pins():
+    if not PINS.exists():
+        return {}
+    return json.loads(PINS.read_text(encoding="utf-8"))
 
 
-def write_script(name, body):
-    path = SCRIPT_DIR / name
-    path.write_text(textwrap.dedent(body).lstrip(), encoding="utf-8", newline="\n")
-
-
-def workflow_env(name, default):
-    text = WORKFLOW.read_text(encoding="utf-8")
-    match = re.search(rf"^  {re.escape(name)}: (.+)$", text, flags=re.MULTILINE)
-    return match.group(1).strip() if match else default
+def write_pins(data):
+    PINS.write_text(
+        json.dumps(data, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
 
 
 def get_lucky():
@@ -285,7 +276,9 @@ def get_bandix():
 
 
 def get_nikki():
-    openwrt_release = workflow_env("NIKKI_OPENWRT_RELEASE", "25.12")
+    openwrt_release = os.environ.get("NIKKI_OPENWRT_RELEASE")
+    if not openwrt_release:
+        openwrt_release = read_pins().get("nikki", {}).get("openwrt_release", "25.12")
     release = latest_release("morytyann/OpenWrt-nikki")
     asset, _ = pick_asset(
         release,
@@ -315,376 +308,6 @@ def get_nikki():
     }
 
 
-def render_lucky(data):
-    write_script(
-        "download-lucky-apks.sh",
-        f"""
-        #!/usr/bin/env bash
-        set -euo pipefail
-
-        repo_dir="${{1:?usage: download-lucky-apks.sh <feed-dir>}}"
-        tag="${{LUCKY_RELEASE_TAG:-{data['tag']}}}"
-        lucky_version="${{LUCKY_VERSION:-{data['version']}}}"
-        luci_version="${{LUCI_LUCKY_VERSION:-{data['luci_version']}}}"
-        i18n_version="${{LUCI_LUCKY_I18N_VERSION:-{data['i18n_version']}}}"
-        base_url="https://github.com/levi882/luci-app-lucky/releases/download/${{tag}}"
-
-        mkdir -p "$repo_dir"
-
-        download_and_check() {{
-          local source_file="$1"
-          local sha256="$2"
-          local dest_file="$3"
-          local tmp_file="${{repo_dir}}/.${{source_file}}.download"
-
-          echo "Downloading ${{source_file}} -> ${{dest_file}}"
-          curl -fL --retry 3 --retry-delay 2 -o "$tmp_file" "${{base_url}}/${{source_file}}"
-
-          printf '%s  %s\\n' "$sha256" "$tmp_file" | sha256sum -c -
-          mv "$tmp_file" "${{repo_dir}}/${{dest_file}}"
-        }}
-
-        download_and_check \\
-          "lucky-${{lucky_version}}_x86_64.apk" \\
-          "{data['main_sha']}" \\
-          "lucky-${{lucky_version}}.apk"
-
-        download_and_check \\
-          "luci-app-lucky-${{luci_version}}_x86_64.apk" \\
-          "{data['luci_sha']}" \\
-          "luci-app-lucky-${{luci_version}}.apk"
-
-        download_and_check \\
-          "luci-i18n-lucky-zh-cn-${{i18n_version}}_x86_64.apk" \\
-          "{data['i18n_sha']}" \\
-          "luci-i18n-lucky-zh-cn-${{i18n_version}}.apk"
-        """,
-    )
-
-
-def render_easytier(data):
-    write_script(
-        "download-easytier-apks.sh",
-        f"""
-        #!/usr/bin/env bash
-        set -euo pipefail
-
-        repo_dir="${{1:?usage: download-easytier-apks.sh <feed-dir>}}"
-        tag="${{EASYTIER_RELEASE_TAG:-{data['tag']}}}"
-        version="${{EASYTIER_VERSION:-{data['version']}}}"
-        archive="EasyTier-${{tag}}-x86_64-SNAPSHOT.zip"
-        archive_sha256="{data['archive_sha']}"
-        url="https://github.com/EasyTier/luci-app-easytier/releases/download/${{tag}}/${{archive}}"
-        tmp_dir="$(mktemp -d)"
-
-        command -v unzip >/dev/null 2>&1 || {{
-          echo "unzip is required to extract ${{archive}}" >&2
-          exit 1
-        }}
-
-        cleanup() {{
-          rm -rf "$tmp_dir"
-        }}
-        trap cleanup EXIT
-
-        mkdir -p "$repo_dir"
-
-        echo "Downloading ${{archive}}"
-        curl -fL --retry 3 --retry-delay 2 -o "${{tmp_dir}}/${{archive}}" "$url"
-
-        (
-          cd "$tmp_dir"
-          printf '%s  %s\\n' "$archive_sha256" "$archive" | sha256sum -c -
-        )
-
-        unzip -j "${{tmp_dir}}/${{archive}}" '*.apk' -d "${{tmp_dir}}/apks"
-
-        copy_and_check() {{
-          local file="$1"
-          local sha256="$2"
-
-          [ -s "${{tmp_dir}}/apks/${{file}}" ] || {{
-            echo "Expected APK not found in ${{archive}}: ${{file}}" >&2
-            exit 1
-          }}
-
-          (
-            cd "${{tmp_dir}}/apks"
-            printf '%s  %s\\n' "$sha256" "$file" | sha256sum -c -
-          )
-
-          cp "${{tmp_dir}}/apks/${{file}}" "$repo_dir/"
-        }}
-
-        copy_and_check \\
-          "{data['main_name']}" \\
-          "{data['main_sha']}"
-
-        copy_and_check \\
-          "{data['luci_name']}" \\
-          "{data['luci_sha']}"
-
-        copy_and_check \\
-          "{data['i18n_name']}" \\
-          "{data['i18n_sha']}"
-        """,
-    )
-
-
-def render_rtp2httpd(data):
-    write_script(
-        "download-rtp2httpd-apks.sh",
-        f"""
-        #!/usr/bin/env bash
-        set -euo pipefail
-
-        repo_dir="${{1:?usage: download-rtp2httpd-apks.sh <feed-dir>}}"
-        tag="${{RTP2HTTPD_RELEASE_TAG:-{data['tag']}}}"
-        version="${{RTP2HTTPD_VERSION:-{data['version']}}}"
-        release="${{RTP2HTTPD_PACKAGE_RELEASE:-{data['package_release']}}}"
-        base_url="https://github.com/stackia/rtp2httpd/releases/download/${{tag}}"
-
-        mkdir -p "$repo_dir"
-
-        download_and_check() {{
-          local source_file="$1"
-          local sha256="$2"
-          local dest_file="${{3:-$source_file}}"
-          local tmp_file="${{repo_dir}}/.${{source_file}}.download"
-
-          echo "Downloading ${{source_file}} -> ${{dest_file}}"
-          curl -fL --retry 3 --retry-delay 2 -o "$tmp_file" "${{base_url}}/${{source_file}}"
-
-          printf '%s  %s\\n' "$sha256" "$tmp_file" | sha256sum -c -
-          mv "$tmp_file" "${{repo_dir}}/${{dest_file}}"
-        }}
-
-        download_and_check \\
-          "rtp2httpd-${{version}}-${{release}}_x86_64.apk" \\
-          "{data['main_sha']}" \\
-          "rtp2httpd-${{version}}-${{release}}.apk"
-
-        download_and_check \\
-          "luci-app-rtp2httpd-${{version}}-${{release}}.apk" \\
-          "{data['luci_sha']}"
-
-        download_and_check \\
-          "luci-i18n-rtp2httpd-zh-cn-${{version}}.apk" \\
-          "{data['i18n_sha']}"
-        """,
-    )
-
-
-def render_fakehttp(data):
-    write_script(
-        "download-fakehttp-apks.sh",
-        f"""
-        #!/usr/bin/env bash
-        set -euo pipefail
-
-        repo_dir="${{1:?usage: download-fakehttp-apks.sh <feed-dir>}}"
-        tag="${{FAKEHTTP_RELEASE_TAG:-{data['tag']}}}"
-        openwrt_release="${{FAKEHTTP_OPENWRT_RELEASE:-{data['openwrt_release']}}}"
-        version="${{FAKEHTTP_VERSION:-{data['version']}}}"
-        package_release="${{FAKEHTTP_PACKAGE_RELEASE:-{data['package_release']}}}"
-        i18n_release="${{FAKEHTTP_I18N_RELEASE:-{data['i18n_release']}}}"
-        prefix="fakehttp-openwrt-${{openwrt_release}}-x86_64"
-        base_url="https://github.com/levi882/FakeHTTP/releases/download/${{tag}}"
-
-        mkdir -p "$repo_dir"
-
-        download_and_check() {{
-          local source_file="$1"
-          local sha256="$2"
-          local dest_file="$3"
-          local tmp_file="${{repo_dir}}/.${{source_file}}.download"
-
-          echo "Downloading ${{source_file}} -> ${{dest_file}}"
-          curl -fL --retry 3 --retry-delay 2 -o "$tmp_file" "${{base_url}}/${{source_file}}"
-
-          printf '%s  %s\\n' "$sha256" "$tmp_file" | sha256sum -c -
-          mv "$tmp_file" "${{repo_dir}}/${{dest_file}}"
-        }}
-
-        download_and_check \\
-          "${{prefix}}-fakehttp-${{version}}-${{package_release}}.apk" \\
-          "{data['main_sha']}" \\
-          "fakehttp-${{version}}-${{package_release}}.apk"
-
-        download_and_check \\
-          "${{prefix}}-luci-app-fakehttp-${{version}}-${{package_release}}.apk" \\
-          "{data['luci_sha']}" \\
-          "luci-app-fakehttp-${{version}}-${{package_release}}.apk"
-
-        download_and_check \\
-          "${{prefix}}-luci-i18n-fakehttp-zh-cn-${{version}}-${{i18n_release}}.apk" \\
-          "{data['i18n_sha']}" \\
-          "luci-i18n-fakehttp-zh-cn-${{version}}-${{i18n_release}}.apk"
-        """,
-    )
-
-
-def render_smartdns(data):
-    write_script(
-        "download-smartdns-apks.sh",
-        f"""
-        #!/usr/bin/env bash
-        set -euo pipefail
-
-        repo_dir="${{1:?usage: download-smartdns-apks.sh <feed-dir>}}"
-        tag="${{SMARTDNS_RELEASE_TAG:-{data['tag']}}}"
-        version="${{SMARTDNS_VERSION:-{data['version']}}}"
-
-        mkdir -p "$repo_dir"
-        apk_version="${{version%-*}}-r${{version##*-}}"
-
-        download_and_check() {{
-          local source_file="$1"
-          local sha256="$2"
-          local dest_file="$3"
-          local url="https://github.com/pymumu/smartdns/releases/download/${{tag}}/${{source_file}}"
-          local tmp_file="${{repo_dir}}/.${{source_file}}.download"
-
-          echo "Downloading ${{source_file}} -> ${{dest_file}}"
-          curl -fL --retry 3 --retry-delay 2 -o "$tmp_file" "$url"
-
-          printf '%s  %s\\n' "$sha256" "$tmp_file" | sha256sum -c -
-          mv "$tmp_file" "${{repo_dir}}/${{dest_file}}"
-        }}
-
-        download_and_check \\
-          "smartdns.${{version}}.x86_64-openwrt-all.apk" \\
-          "{data['main_sha']}" \\
-          "smartdns-${{apk_version}}.apk"
-
-        download_and_check \\
-          "luci-app-smartdns.${{version}}.all-luci-all.apk" \\
-          "{data['luci_sha']}" \\
-          "luci-app-smartdns-${{apk_version}}.apk"
-
-        download_and_check \\
-          "luci-app-smartdns-lite.${{version}}.all-luci-lite-all.apk" \\
-          "{data['lite_sha']}" \\
-          "luci-app-smartdns-lite-${{apk_version}}.apk"
-        """,
-    )
-
-
-def render_bandix(data):
-    write_script(
-        "download-bandix-apks.sh",
-        f"""
-        #!/usr/bin/env bash
-        set -euo pipefail
-
-        repo_dir="${{1:?usage: download-bandix-apks.sh <feed-dir>}}"
-        bandix_tag="${{BANDIX_RELEASE_TAG:-{data['tag']}}}"
-        bandix_version="${{BANDIX_VERSION:-{data['version']}}}"
-        luci_tag="${{LUCI_BANDIX_RELEASE_TAG:-{data['luci_tag']}}}"
-        luci_version="${{LUCI_BANDIX_VERSION:-{data['luci_version']}}}"
-        i18n_version="${{LUCI_BANDIX_I18N_VERSION:-{data['i18n_version']}}}"
-
-        mkdir -p "$repo_dir"
-
-        download_and_check() {{
-          local url="$1"
-          local source_file="$2"
-          local sha256="$3"
-          local dest_file="$4"
-          local tmp_file="${{repo_dir}}/.${{source_file}}.download"
-
-          echo "Downloading ${{source_file}} -> ${{dest_file}}"
-          curl -fL --retry 3 --retry-delay 2 -o "$tmp_file" "$url"
-
-          printf '%s  %s\\n' "$sha256" "$tmp_file" | sha256sum -c -
-          mv "$tmp_file" "${{repo_dir}}/${{dest_file}}"
-        }}
-
-        i18n_apk_version="${{i18n_version%.*}}~${{i18n_version##*.}}"
-
-        download_and_check \\
-          "https://github.com/timsaya/openwrt-bandix/releases/download/${{bandix_tag}}/bandix-${{bandix_version}}_x86_64.apk" \\
-          "bandix-${{bandix_version}}_x86_64.apk" \\
-          "{data['main_sha']}" \\
-          "bandix-${{bandix_version}}.apk"
-
-        download_and_check \\
-          "https://github.com/timsaya/luci-app-bandix/releases/download/${{luci_tag}}/luci-app-bandix-${{luci_version}}_all.apk" \\
-          "luci-app-bandix-${{luci_version}}_all.apk" \\
-          "{data['luci_sha']}" \\
-          "luci-app-bandix-${{luci_version}}.apk"
-
-        download_and_check \\
-          "https://github.com/timsaya/luci-app-bandix/releases/download/${{luci_tag}}/luci-i18n-bandix-zh-cn-${{i18n_version}}_all.apk" \\
-          "luci-i18n-bandix-zh-cn-${{i18n_version}}_all.apk" \\
-          "{data['i18n_sha']}" \\
-          "luci-i18n-bandix-zh-cn-${{i18n_apk_version}}.apk"
-        """,
-    )
-
-
-def render_nikki(data):
-    copy_blocks = []
-    for file_name, digest in data["apks"].items():
-        copy_blocks.append(
-            f'''copy_and_check \\
-  "{file_name}" \\
-  "{digest}"'''
-        )
-
-    write_script(
-        "download-nikki-apks.sh",
-        f"""
-        #!/usr/bin/env bash
-        set -euo pipefail
-
-        repo_dir="${{1:?usage: download-nikki-apks.sh <feed-dir>}}"
-        tag="${{NIKKI_RELEASE_TAG:-{data['tag']}}}"
-        openwrt_release="${{NIKKI_OPENWRT_RELEASE:-{data['openwrt_release']}}}"
-        archive="nikki_x86_64-openwrt-${{openwrt_release}}.tar.gz"
-        archive_sha256="{data['archive_sha']}"
-        url="https://github.com/morytyann/OpenWrt-nikki/releases/download/${{tag}}/${{archive}}"
-        tmp_dir="$(mktemp -d)"
-
-        cleanup() {{
-          rm -rf "$tmp_dir"
-        }}
-        trap cleanup EXIT
-
-        mkdir -p "$repo_dir"
-
-        echo "Downloading ${{archive}}"
-        curl -fL --retry 3 --retry-delay 2 -o "${{tmp_dir}}/${{archive}}" "$url"
-
-        (
-          cd "$tmp_dir"
-          printf '%s  %s\\n' "$archive_sha256" "$archive" | sha256sum -c -
-        )
-
-        tar -xzf "${{tmp_dir}}/${{archive}}" -C "$tmp_dir" --wildcards '*.apk'
-
-        copy_and_check() {{
-          local file="$1"
-          local sha256="$2"
-
-          [ -s "${{tmp_dir}}/${{file}}" ] || {{
-            echo "Expected APK not found in ${{archive}}: ${{file}}" >&2
-            exit 1
-          }}
-
-          (
-            cd "$tmp_dir"
-            printf '%s  %s\\n' "$sha256" "$file" | sha256sum -c -
-          )
-
-          cp "${{tmp_dir}}/${{file}}" "$repo_dir/"
-        }}
-
-        {chr(10).join(copy_blocks)}
-        """,
-    )
-
-
 def main():
     print("Checking latest release APKs...")
     lucky = get_lucky()
@@ -695,41 +318,17 @@ def main():
     bandix = get_bandix()
     nikki = get_nikki()
 
-    update_env(
+    write_pins(
         {
-            "LUCKY_RELEASE_TAG": lucky["tag"],
-            "LUCKY_VERSION": lucky["version"],
-            "LUCI_LUCKY_VERSION": lucky["luci_version"],
-            "LUCI_LUCKY_I18N_VERSION": lucky["i18n_version"],
-            "EASYTIER_RELEASE_TAG": easytier["tag"],
-            "EASYTIER_VERSION": easytier["version"],
-            "RTP2HTTPD_RELEASE_TAG": rtp2httpd["tag"],
-            "RTP2HTTPD_VERSION": rtp2httpd["version"],
-            "RTP2HTTPD_PACKAGE_RELEASE": rtp2httpd["package_release"],
-            "FAKEHTTP_RELEASE_TAG": fakehttp["tag"],
-            "FAKEHTTP_OPENWRT_RELEASE": fakehttp["openwrt_release"],
-            "FAKEHTTP_VERSION": fakehttp["version"],
-            "FAKEHTTP_PACKAGE_RELEASE": fakehttp["package_release"],
-            "FAKEHTTP_I18N_RELEASE": fakehttp["i18n_release"],
-            "SMARTDNS_RELEASE_TAG": smartdns["tag"],
-            "SMARTDNS_VERSION": smartdns["version"],
-            "BANDIX_RELEASE_TAG": bandix["tag"],
-            "BANDIX_VERSION": bandix["version"],
-            "LUCI_BANDIX_RELEASE_TAG": bandix["luci_tag"],
-            "LUCI_BANDIX_VERSION": bandix["luci_version"],
-            "LUCI_BANDIX_I18N_VERSION": bandix["i18n_version"],
-            "NIKKI_RELEASE_TAG": nikki["tag"],
-            "NIKKI_OPENWRT_RELEASE": nikki["openwrt_release"],
+            "bandix": bandix,
+            "easytier": easytier,
+            "fakehttp": fakehttp,
+            "lucky": lucky,
+            "nikki": nikki,
+            "rtp2httpd": rtp2httpd,
+            "smartdns": smartdns,
         }
     )
-
-    render_lucky(lucky)
-    render_easytier(easytier)
-    render_rtp2httpd(rtp2httpd)
-    render_fakehttp(fakehttp)
-    render_smartdns(smartdns)
-    render_bandix(bandix)
-    render_nikki(nikki)
 
     for name, data in [
         ("Lucky", lucky),

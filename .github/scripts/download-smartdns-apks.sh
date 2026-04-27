@@ -2,8 +2,13 @@
 set -euo pipefail
 
 repo_dir="${1:?usage: download-smartdns-apks.sh <feed-dir>}"
-tag="${SMARTDNS_RELEASE_TAG:-Release47.1}"
-version="${SMARTDNS_VERSION:-1.2025.11.09-1443}"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+pin() {
+  python3 "$script_dir/read-release-pin.py" "$1"
+}
+
+tag="$(pin smartdns.tag)"
+version="$(pin smartdns.version)"
 
 mkdir -p "$repo_dir"
 apk_version="${version%-*}-r${version##*-}"
@@ -24,15 +29,15 @@ download_and_check() {
 
 download_and_check \
   "smartdns.${version}.x86_64-openwrt-all.apk" \
-  "48a92a6290b7a7281b6269d08678eb89a64bc49b0dc4f49e7297e8d6e9dfda25" \
+  "$(pin smartdns.main_sha)" \
   "smartdns-${apk_version}.apk"
 
 download_and_check \
   "luci-app-smartdns.${version}.all-luci-all.apk" \
-  "162a653278ca627dbfb313b761aca685f2338ba1c03ab60c72291c881511a923" \
+  "$(pin smartdns.luci_sha)" \
   "luci-app-smartdns-${apk_version}.apk"
 
 download_and_check \
   "luci-app-smartdns-lite.${version}.all-luci-lite-all.apk" \
-  "98b634ede7b60ebce266f8281785504ade27989e6867624875364837aaf2a8fe" \
+  "$(pin smartdns.lite_sha)" \
   "luci-app-smartdns-lite-${apk_version}.apk"

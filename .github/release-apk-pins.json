@@ -1,0 +1,69 @@
+{
+  "bandix": {
+    "i18n_sha": "3df1cd2ef7a8a9c888cabc9d5c3f71dcb4719a486491b60158070c9e37d082b9",
+    "i18n_version": "26.068.39505.1002c41",
+    "luci_sha": "f0da4b13a50a243a5d92d4ad7d39e71bbb3378dfbe1824b184f382d67f08430c",
+    "luci_tag": "v0.12.6",
+    "luci_version": "0.12.6-r1",
+    "main_sha": "bce17c28dfd9c269facdbe3c91495435ebb2b677ef0f360b31c22d2cc0c049a2",
+    "tag": "v0.12.7",
+    "version": "0.12.7-r1"
+  },
+  "easytier": {
+    "archive_sha": "8d15ef6d62a1f393537f96bc09cbb4cd5ad950ef6a6394bfeb978a2fdd269d2f",
+    "i18n_name": "luci-i18n-easytier-zh-cn-26.108.04894~f333f04.apk",
+    "i18n_sha": "7652194e939995ae31d330d874e60aaf9b25dc1d27c5cdb128f6e34bca0709e6",
+    "luci_name": "luci-app-easytier-2.6.0-r2.apk",
+    "luci_sha": "b97134cf583476fb7530cd86a781e9ee76b5a5362edad457adb72645f812f39f",
+    "main_name": "easytier-2.6.1.apk",
+    "main_sha": "f0dec9a5963cc6ea7d06d4ad3ff3e5d4df347eddca3988770975bac7b5ddfa5a",
+    "tag": "v2.6.1",
+    "version": "2.6.1"
+  },
+  "fakehttp": {
+    "i18n_release": "r1",
+    "i18n_sha": "99c5f2ab3ec264169b0e756e0290c7637528dbebbc5773ddb914f5f2ec105439",
+    "luci_sha": "eef39ee5c34709b6386cc8a326ec01017f1e79664d035eb80a4e1bbf05e9ab8f",
+    "main_sha": "7b8fc9647944f2690084258539708cf370d34e627117250f402d190d528af58e",
+    "openwrt_release": "25.12.2",
+    "package_release": "r2",
+    "tag": "v0.9.18",
+    "version": "0.9.18"
+  },
+  "lucky": {
+    "i18n_sha": "10e4e86ca9bd5fa3ade1f929b38596a2481148690be9e7615948593bb77bd93c",
+    "i18n_version": "0",
+    "luci_sha": "42822bf7457fb541a259c0ace945a3f0c19e701113c01d07f1d9afa3cb56a598",
+    "luci_version": "2.2.2-r1",
+    "main_sha": "141d49448fff081fa9aaefcb44c2ef47f660e1153203a729a5861ff2e66474b7",
+    "tag": "v2.27.2",
+    "version": "2.27.2-r1"
+  },
+  "nikki": {
+    "apks": {
+      "luci-app-nikki-1.26.0-r1.apk": "1da947b8c911149d64f9dfd137d73363d7b692e026be6cc45b327f354e4c9675",
+      "luci-i18n-nikki-ru-26.100.26541~bc29251.apk": "3d8291f8883beb220ef345d33d0ff1c499534e1ee18e4c7d5bcdd42c6ae63ec4",
+      "luci-i18n-nikki-zh-cn-26.100.26541~bc29251.apk": "1d9c847bdc819f42d6697a1b5c1c2b9241da6f844f7e9197f41a3d37b382c182",
+      "luci-i18n-nikki-zh-tw-26.100.26541~bc29251.apk": "974ac4ee5cd80514c24913e973f029f10fc09d949e85063eb98a773a4b671e59",
+      "nikki-2026.04.08-r1.apk": "bc1530588290b861f50ed03bd3f476504566549cf0a4046ac4955439d3c680b4"
+    },
+    "archive_sha": "7c1b21c4eea6fa29dca580ede2c7777f7cf6ac6c89ac90b1ed0edc3af2e9a53c",
+    "openwrt_release": "25.12",
+    "tag": "v1.26.0"
+  },
+  "rtp2httpd": {
+    "i18n_sha": "712fe32b6d30b80f0719158f6c7252557c4dd496f0b420522c4701e45982286a",
+    "luci_sha": "1d76e0d6e8c7ff77b6651f353f84a576fd2c35e5dcf1f26ad1aab201adc0ed05",
+    "main_sha": "1c870a54502940cd893be5b10dcf7e17fb27ea924fa38a522e1f0dfbef4d10fd",
+    "package_release": "r1",
+    "tag": "v3.11.0",
+    "version": "3.11.0"
+  },
+  "smartdns": {
+    "lite_sha": "98b634ede7b60ebce266f8281785504ade27989e6867624875364837aaf2a8fe",
+    "luci_sha": "162a653278ca627dbfb313b761aca685f2338ba1c03ab60c72291c881511a923",
+    "main_sha": "48a92a6290b7a7281b6269d08678eb89a64bc49b0dc4f49e7297e8d6e9dfda25",
+    "tag": "Release47.1",
+    "version": "1.2025.11.09-1443"
+  }
+}

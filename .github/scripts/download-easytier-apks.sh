@@ -2,10 +2,15 @@
 set -euo pipefail
 
 repo_dir="${1:?usage: download-easytier-apks.sh <feed-dir>}"
-tag="${EASYTIER_RELEASE_TAG:-v2.6.1}"
-version="${EASYTIER_VERSION:-2.6.1}"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+pin() {
+  python3 "$script_dir/read-release-pin.py" "$1"
+}
+
+tag="$(pin easytier.tag)"
+version="$(pin easytier.version)"
 archive="EasyTier-${tag}-x86_64-SNAPSHOT.zip"
-archive_sha256="8d15ef6d62a1f393537f96bc09cbb4cd5ad950ef6a6394bfeb978a2fdd269d2f"
+archive_sha256="$(pin easytier.archive_sha)"
 url="https://github.com/EasyTier/luci-app-easytier/releases/download/${tag}/${archive}"
 tmp_dir="$(mktemp -d)"
 
@@ -49,13 +54,13 @@ copy_and_check() {
 }
 
 copy_and_check \
-  "easytier-2.6.1.apk" \
-  "f0dec9a5963cc6ea7d06d4ad3ff3e5d4df347eddca3988770975bac7b5ddfa5a"
+  "$(pin easytier.main_name)" \
+  "$(pin easytier.main_sha)"
 
 copy_and_check \
-  "luci-app-easytier-2.6.0-r2.apk" \
-  "b97134cf583476fb7530cd86a781e9ee76b5a5362edad457adb72645f812f39f"
+  "$(pin easytier.luci_name)" \
+  "$(pin easytier.luci_sha)"
 
 copy_and_check \
-  "luci-i18n-easytier-zh-cn-26.108.04894~f333f04.apk" \
-  "7652194e939995ae31d330d874e60aaf9b25dc1d27c5cdb128f6e34bca0709e6"
+  "$(pin easytier.i18n_name)" \
+  "$(pin easytier.i18n_sha)"
