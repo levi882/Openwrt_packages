@@ -1,13 +1,13 @@
 {
   "bandix": {
-    "i18n_sha": "3df1cd2ef7a8a9c888cabc9d5c3f71dcb4719a486491b60158070c9e37d082b9",
-    "i18n_version": "26.068.39505.1002c41",
-    "luci_sha": "f0da4b13a50a243a5d92d4ad7d39e71bbb3378dfbe1824b184f382d67f08430c",
-    "luci_tag": "v0.12.6",
-    "luci_version": "0.12.6-r1",
-    "main_sha": "bce17c28dfd9c269facdbe3c91495435ebb2b677ef0f360b31c22d2cc0c049a2",
-    "tag": "v0.12.7",
-    "version": "0.12.7-r1"
+    "i18n_sha": "26bed75050c5ef7e2dce2143b5d0b22401b4cab71f5dbf04ebcd01542b8299a0",
+    "i18n_version": "26.115.23589.49c1ba8",
+    "luci_sha": "46043282ded37181638767529944ca40b00c783057b54c010c5040e56a9536dc",
+    "luci_tag": "v0.12.7",
+    "luci_version": "0.12.7-r1",
+    "main_sha": "c8e117d995a619fff12f1e833c928ec57fd4c44dcea04ee9837ca5d9d1261de1",
+    "tag": "v0.12.8",
+    "version": "0.12.8-r1"
   },
   "easytier": {
     "archive_sha": "8d15ef6d62a1f393537f96bc09cbb4cd5ad950ef6a6394bfeb978a2fdd269d2f",
