@@ -35,9 +35,9 @@
     "i18n_version": "0",
     "luci_sha": "42822bf7457fb541a259c0ace945a3f0c19e701113c01d07f1d9afa3cb56a598",
     "luci_version": "2.2.2-r1",
-    "main_sha": "141d49448fff081fa9aaefcb44c2ef47f660e1153203a729a5861ff2e66474b7",
-    "tag": "v2.27.2",
-    "version": "2.27.2-r1"
+    "main_sha": "af4722252a9e2de95248ea3e38a9636cd5bf3da1b6340807912a11f586cbadb2",
+    "tag": "v3.0.0_beta5",
+    "version": "3.0.0_beta5-r1"
   },
   "nikki": {
     "apks": {
