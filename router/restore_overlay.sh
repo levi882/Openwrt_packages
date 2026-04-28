@@ -11,6 +11,7 @@ RESTORE_MYFEED_KEY_URL="${RESTORE_MYFEED_KEY_URL:-$RESTORE_MYFEED_BASE/public-ke
 DEFAULT_INSTALL_PACKAGES="omcproxy luci-app-omcproxy luci-i18n-omcproxy-zh-cn"
 RESTORE_INSTALL_PACKAGES="${RESTORE_INSTALL_PACKAGES-$DEFAULT_INSTALL_PACKAGES}"
 RESTORE_THEME_PACKAGES=""
+RESTORE_THEME_REPAIR_PACKAGES=""
 DEFAULT_MYFEED_INSTALL_PACKAGES="luci-theme-aurora luci-app-aurora-config luci-i18n-aurora-config-zh-cn bandix luci-app-bandix luci-i18n-bandix-zh-cn easytier luci-app-easytier luci-i18n-easytier-zh-cn fakehttp luci-app-fakehttp luci-i18n-fakehttp-zh-cn lucky luci-app-lucky luci-i18n-lucky-zh-cn nikki luci-app-nikki luci-i18n-nikki-zh-cn rtp2httpd luci-app-rtp2httpd luci-i18n-rtp2httpd-zh-cn smartdns luci-app-smartdns"
 RESTORE_MYFEED_INSTALL_PACKAGES="${RESTORE_MYFEED_INSTALL_PACKAGES-$DEFAULT_MYFEED_INSTALL_PACKAGES}"
 DEFAULT_REMOVE_PREINSTALLED_LUCI_PACKAGES="luci-app-usb-printer luci-i18n-usb-printer-zh-cn luci-app-p910nd luci-i18n-p910nd-zh-cn luci-app-nlbwmon luci-i18n-nlbwmon-zh-cn luci-app-eqos luci-i18n-eqos-zh-cn luci-app-sqm luci-i18n-sqm-zh-cn luci-app-passwall luci-i18n-passwall-zh-cn luci-app-homeproxy luci-i18n-homeproxy-zh-cn luci-app-qbittorrent luci-i18n-qbittorrent-zh-cn luci-app-mosdns luci-i18n-mosdns-zh-cn luci-app-ddns luci-i18n-ddns-zh-cn luci-app-airconnect luci-i18n-airconnect-zh-cn luci-app-airplay2 luci-i18n-airplay2-zh-cn luci-app-frpc luci-i18n-frpc-zh-cn luci-app-mentohust luci-i18n-mentohust-zh-cn luci-app-natmap luci-i18n-natmap-zh-cn luci-app-openlist2 luci-i18n-openlist2-zh-cn luci-app-openlist luci-i18n-openlist-zh-cn luci-app-socat luci-i18n-socat-zh-cn luci-app-wolplus luci-i18n-wolplus-zh-cn luci-app-zerotier luci-i18n-zerotier-zh-cn luci-proto-wireguard luci-i18n-proto-wireguard-zh-cn luci-theme-argon luci-app-argon-config luci-i18n-argon-config-zh-cn"
@@ -36,6 +37,50 @@ dedupe_apk_repo_file() {
             if (!seen[line]++) print line
         }
     ' "$FILE" > "$TMP" && mv "$TMP" "$FILE"
+}
+
+repair_luci_theme_config() {
+    command -v uci >/dev/null 2>&1 || return 0
+
+    uci -q set luci.themes=internal
+
+    for THEME_DIR in /www/luci-static/*; do
+        [ -d "$THEME_DIR" ] || continue
+        THEME_ID="$(basename "$THEME_DIR")"
+        THEME_OPTION="$(
+            printf '%s\n' "$THEME_ID" |
+                awk -F- '{
+                    out = ""
+                    for (i = 1; i <= NF; i++) {
+                        part = $i
+                        gsub(/[^A-Za-z0-9_]/, "", part)
+                        if (part == "")
+                            continue
+                        out = out toupper(substr(part, 1, 1)) substr(part, 2)
+                    }
+                    print out
+                }'
+        )"
+        [ -n "$THEME_OPTION" ] || continue
+        uci -q set "luci.themes.$THEME_OPTION=/luci-static/$THEME_ID"
+    done
+
+    CURRENT_THEME="$(uci -q get luci.main.mediaurlbase || true)"
+    if [ -z "$CURRENT_THEME" ] || [ ! -d "/www$CURRENT_THEME" ]; then
+        FALLBACK_THEME=""
+        [ -d /www/luci-static/bootstrap ] && FALLBACK_THEME="/luci-static/bootstrap"
+        if [ -z "$FALLBACK_THEME" ]; then
+            for THEME_DIR in /www/luci-static/*; do
+                [ -d "$THEME_DIR" ] || continue
+                FALLBACK_THEME="/luci-static/$(basename "$THEME_DIR")"
+                break
+            done
+        fi
+        [ -n "$FALLBACK_THEME" ] && \
+            uci -q set luci.main.mediaurlbase="$FALLBACK_THEME"
+    fi
+
+    uci -q commit luci
 }
 
 [ -f "$BACKUP_FILE" ] || {
@@ -84,7 +129,13 @@ gzip -t "$BACKUP_FILE"
 tar -tzf "$BACKUP_FILE" >/dev/null
 
 echo "清空 overlay 并恢复备份..."
-rm -rf /overlay/*
+RESTORE_COMPLETED=0
+restore_exit_notice() {
+    [ "$RESTORE_COMPLETED" = "1" ] && return 0
+    echo "ERROR: overlay 已被修改，但恢复流程没有完整走完；请先查看上面的错误，不要直接重启。" >&2
+}
+trap restore_exit_notice EXIT
+rm -rf /overlay/* /overlay/.[!.]* /overlay/..?*
 tar -xzf "$BACKUP_FILE" -C /
 
 rm -rf "$UP/root/restore-meta"
@@ -182,11 +233,30 @@ detect_luci_theme_packages() {
         }
         /^P:/ {
             pkg = substr($0, 3)
-            if (!(pkg in remove) &&
-                (pkg ~ /^luci-theme[-_]/ ||
-                 pkg ~ /^luci-app-.+-config$/ ||
-                 pkg ~ /^luci-i18n-.+-config-/))
+            packages[++n] = pkg
+            present[pkg] = 1
+        }
+        END {
+            for (i = 1; i <= n; i++) {
+                pkg = packages[i]
+                if ((pkg in remove) || pkg !~ /^luci-theme[-_]/)
+                    continue
+
                 print pkg
+                theme = pkg
+                sub(/^luci-theme[-_]/, "", theme)
+
+                config = "luci-app-" theme "-config"
+                if ((config in present) && !(config in remove))
+                    print config
+
+                i18n_prefix = "luci-i18n-" theme "-config-"
+                for (j = 1; j <= n; j++) {
+                    companion = packages[j]
+                    if (!(companion in remove) && index(companion, i18n_prefix) == 1)
+                        print companion
+                }
+            }
         }
     ' "$DB" | sort -u > "$THEME_LIST"
 
@@ -219,11 +289,24 @@ detect_luci_theme_packages() {
 
     THEME_PACKAGES="$(tr '\n' ' ' < "$THEME_LIST")"
     RESTORE_THEME_PACKAGES="$THEME_PACKAGES"
-    RESTORE_INSTALL_PACKAGES="$(
-        printf '%s\n' $RESTORE_INSTALL_PACKAGES $THEME_PACKAGES |
-            awk 'NF && !seen[$0]++ { out = out (out ? " " : "") $0 } END { print out }'
+    RESTORE_THEME_REPAIR_PACKAGES="$(
+        printf '%s\n' $THEME_PACKAGES |
+            awk -v myfeed_pkgs="$RESTORE_MYFEED_INSTALL_PACKAGES" '
+                BEGIN {
+                    split(myfeed_pkgs, a, /[ \t]+/)
+                    for (i in a) {
+                        if (a[i] != "")
+                            myfeed[a[i]] = 1
+                    }
+                }
+                NF && !($0 in myfeed) && !seen[$0]++ {
+                    out = out (out ? " " : "") $0
+                }
+                END { print out }
+            '
     )"
     echo "将从当前软件源重新安装备份中已安装的 LuCI 主题包：$THEME_PACKAGES"
+    echo "其中不在 myfeed 安装列表里的主题包将走当前源修复：${RESTORE_THEME_REPAIR_PACKAGES:-<无>}"
 }
 
 detect_luci_theme_packages
@@ -360,7 +443,7 @@ KEEP_RUNTIME_PKGS="$RESTORE_KEEP_RUNTIME_PACKAGES"
 MYFEED_KEY_URL="$RESTORE_MYFEED_KEY_URL"
 REMOVE_PKGS="$RESTORE_REMOVE_PREINSTALLED_LUCI_PACKAGES"
 INSTALL_PKGS="$RESTORE_INSTALL_PACKAGES"
-THEME_PKGS="$RESTORE_THEME_PACKAGES"
+THEME_REPAIR_PKGS="$RESTORE_THEME_REPAIR_PACKAGES"
 MYFEED_INSTALL_PKGS="$RESTORE_MYFEED_INSTALL_PACKAGES"
 
 run_restore_package_actions() {
@@ -369,7 +452,7 @@ run_restore_package_actions() {
         date
         echo "remove packages: \$REMOVE_PKGS"
         echo "install packages: \$INSTALL_PKGS"
-        echo "theme packages to repair: \$THEME_PKGS"
+        echo "theme packages to repair from current repos: \$THEME_REPAIR_PKGS"
         echo "myfeed install packages: \$MYFEED_INSTALL_PKGS"
     } >> "\$LOG"
 
@@ -378,32 +461,86 @@ run_restore_package_actions() {
     MYFEED_TAGGED=0
     MYFEED_PENDING=0
 
+    dedupe_apk_repo_file() {
+        FILE="\$1"
+        SEEN_FILE="\$2"
+        [ -f "\$FILE" ] || return 0
+        TMP="/tmp/\$(basename "\$FILE").dedupe.\$\$"
+        awk -v seen_file="\$SEEN_FILE" '
+            BEGIN {
+                if (seen_file != "") {
+                    while ((getline line < seen_file) > 0) seen[line] = 1
+                    close(seen_file)
+                }
+            }
+            {
+                line = \$0
+                sub(/\r\$/, "", line)
+                if (line ~ /^[[:space:]]*\$/ || line ~ /^[[:space:]]*#/) {
+                    print line
+                    next
+                }
+                if (!seen[line]++) {
+                    print line
+                    if (seen_file != "")
+                        print line >> seen_file
+                }
+            }
+        ' "\$FILE" > "\$TMP" && mv "\$TMP" "\$FILE"
+    }
+
     dedupe_apk_repo_files() {
         SEEN=/tmp/restore-apk-repo-seen.\$\$
         : > "\$SEEN"
         for FILE in /etc/apk/repositories.d/*.list; do
             [ -f "\$FILE" ] || continue
-            TMP="/tmp/\$(basename "\$FILE").dedupe.\$\$"
-            awk -v seen_file="\$SEEN" '
-                BEGIN {
-                    while ((getline line < seen_file) > 0) seen[line] = 1
-                    close(seen_file)
-                }
-                {
-                    line = \$0
-                    sub(/\r\$/, "", line)
-                    if (line ~ /^[[:space:]]*\$/ || line ~ /^[[:space:]]*#/) {
-                        print line
-                        next
-                    }
-                    if (!seen[line]++) {
-                        print line
-                        print line >> seen_file
-                    }
-                }
-            ' "\$FILE" > "\$TMP" && mv "\$TMP" "\$FILE"
+            dedupe_apk_repo_file "\$FILE" "\$SEEN"
         done
         rm -f "\$SEEN"
+    }
+
+    repair_luci_theme_config() {
+        command -v uci >/dev/null 2>&1 || return 0
+
+        uci -q set luci.themes=internal
+
+        for THEME_DIR in /www/luci-static/*; do
+            [ -d "\$THEME_DIR" ] || continue
+            THEME_ID="\$(basename "\$THEME_DIR")"
+            THEME_OPTION="\$(
+                printf '%s\n' "\$THEME_ID" |
+                    awk -F- '{
+                        out = ""
+                        for (i = 1; i <= NF; i++) {
+                            part = \$i
+                            gsub(/[^A-Za-z0-9_]/, "", part)
+                            if (part == "")
+                                continue
+                            out = out toupper(substr(part, 1, 1)) substr(part, 2)
+                        }
+                        print out
+                    }'
+            )"
+            [ -n "\$THEME_OPTION" ] || continue
+            uci -q set "luci.themes.\$THEME_OPTION=/luci-static/\$THEME_ID"
+        done
+
+        CURRENT_THEME="\$(uci -q get luci.main.mediaurlbase || true)"
+        if [ -z "\$CURRENT_THEME" ] || [ ! -d "/www\$CURRENT_THEME" ]; then
+            FALLBACK_THEME=""
+            [ -d /www/luci-static/bootstrap ] && FALLBACK_THEME="/luci-static/bootstrap"
+            if [ -z "\$FALLBACK_THEME" ]; then
+                for THEME_DIR in /www/luci-static/*; do
+                    [ -d "\$THEME_DIR" ] || continue
+                    FALLBACK_THEME="/luci-static/\$(basename "\$THEME_DIR")"
+                    break
+                done
+            fi
+            [ -n "\$FALLBACK_THEME" ] && \
+                uci -q set luci.main.mediaurlbase="\$FALLBACK_THEME"
+        fi
+
+        uci -q commit luci
     }
 
     normalize_myfeed_repo() {
@@ -453,6 +590,8 @@ run_restore_package_actions() {
     start_kept_runtime
     sleep 5
     dedupe_apk_repo_files
+    repair_luci_theme_config >> "\$LOG" 2>&1 || \
+        echo "WARNING: failed to repair luci theme config before package actions" >> "\$LOG"
 
     REMOVE_LIST=""
     for PKG in \$REMOVE_PKGS; do
@@ -470,15 +609,19 @@ run_restore_package_actions() {
 
     INSTALL_DONE=1
     if [ -n "\$INSTALL_PKGS" ] || [ -n "\$MYFEED_INSTALL_PKGS" ]; then
-        tag_myfeed_repo || MYFEED_PENDING=1
-
         ATTEMPT=1
         INSTALL_DONE=0
         while [ "\$ATTEMPT" -le 12 ]; do
+            MYFEED_TAGGED=0
+            MYFEED_PENDING=0
+            if [ -n "\$MYFEED_INSTALL_PKGS" ]; then
+                tag_myfeed_repo || MYFEED_PENDING=1
+            fi
+
             echo "apk update attempt \$ATTEMPT/12" >> "\$LOG"
             if apk update >> "\$LOG" 2>&1; then
                 FIX_LIST=""
-                for PKG in \$THEME_PKGS; do
+                for PKG in \$THEME_REPAIR_PKGS; do
                     apk info -e "\$PKG" >/dev/null 2>&1 || continue
                     FIX_LIST="\$FIX_LIST \$PKG"
                 done
@@ -486,6 +629,16 @@ run_restore_package_actions() {
                     echo "apk fix --reinstall:\$FIX_LIST" >> "\$LOG"
                     apk fix --reinstall \$FIX_LIST >> "\$LOG" 2>&1 || \
                         echo "WARNING: apk fix returned non-zero" >> "\$LOG"
+                fi
+                REPAIR_INSTALL_LIST=""
+                for PKG in \$THEME_REPAIR_PKGS; do
+                    apk info -e "\$PKG" >/dev/null 2>&1 && continue
+                    REPAIR_INSTALL_LIST="\$REPAIR_INSTALL_LIST \$PKG"
+                done
+                if [ -n "\$REPAIR_INSTALL_LIST" ]; then
+                    echo "best-effort theme apk add:\$REPAIR_INSTALL_LIST" >> "\$LOG"
+                    apk add --force-broken-world \$REPAIR_INSTALL_LIST >> "\$LOG" 2>&1 || \
+                        echo "WARNING: best-effort theme install failed" >> "\$LOG"
                 fi
 
                 INSTALL_LIST=""
@@ -528,6 +681,9 @@ run_restore_package_actions() {
 
         normalize_myfeed_repo
     fi
+
+    repair_luci_theme_config >> "\$LOG" 2>&1 || \
+        echo "WARNING: failed to repair luci theme config after package actions" >> "\$LOG"
 
     rm -rf /tmp/luci-indexcache /tmp/luci-modulecache /tmp/luci-*cache 2>/dev/null || true
     /etc/init.d/rpcd restart 2>/dev/null || true
@@ -590,7 +746,7 @@ restore_luci_theme_files() {
     echo "已从备份还原 LuCI 主题文件，供当前源不可用的主题继续显示"
 }
 
-save_luci_theme_files
+save_luci_theme_files || echo "WARNING: 保存 LuCI 主题文件失败，继续恢复流程"
 
 rm -rf "$UP/usr/lib/lua/luci"
 rm -rf "$UP/usr/share/luci"
@@ -616,7 +772,8 @@ rm -f "$UP/www/cgi-bin/.wh..wh..opq"
 rm -f "$UP/usr/share/rpcd/acl.d/.wh..wh..opq"
 rm -f "$UP/usr/libexec/rpcd/.wh..wh..opq"
 
-restore_luci_theme_files
+restore_luci_theme_files || echo "WARNING: 还原 LuCI 主题文件失败，继续恢复流程"
+repair_luci_theme_config || echo "WARNING: 修复 LuCI 主题注册失败，继续恢复流程"
 
 schedule_package_actions
 
@@ -627,4 +784,6 @@ rm -rf /overlay/work /overlay/lost+found
 
 echo "完成。系统即将重启，重启后使用新固件自带 LuCI 和包管理状态。"
 sync
+RESTORE_COMPLETED=1
+trap - EXIT
 reboot
