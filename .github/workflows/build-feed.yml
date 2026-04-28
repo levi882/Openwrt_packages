@@ -65,6 +65,9 @@ jobs:
           path: .openwrt-sdk-cache
           key: openwrt-sdk-${{ env.OPENWRT_BRANCH }}-${{ env.OPENWRT_ARCH }}-v1
 
+      - name: build Aurora apks
+        run: bash .github/scripts/build-aurora-apks.sh "bin/packages/${OPENWRT_ARCH}/${FEED_NAME}"
+
       - name: reindex apk feed
         run: bash .github/scripts/reindex-apk-feed.sh "bin/packages/${OPENWRT_ARCH}/${FEED_NAME}"
         env:

@@ -2,8 +2,11 @@
 
 Personal OpenWrt 25.12 `x86_64` APK feed for packages that are not in the firmware's default repositories.
 
-The workflow downloads these release APKs and adds them to the same signed feed:
+The workflow downloads or builds these APKs and adds them to the same signed feed:
 
+- `luci-theme-aurora`
+- `luci-app-aurora-config`
+- `luci-i18n-aurora-config-zh-cn`
 - `lucky`
 - `luci-app-lucky`
 - `luci-i18n-lucky-zh-cn`
@@ -105,6 +108,13 @@ It only does this:
   if they already exist
 - removes old LuCI runtime, static files, RPC ACL files, CGI entry files, and
   common overlay whiteouts so the new firmware uses its own LuCI
+- detects LuCI theme and theme-config packages from the backup, then reinstalls
+  them from the current repositories on first boot so the theme selector is
+  populated again; if APK still thinks a theme is installed after LuCI files
+  were cleaned, the first-boot action runs `apk fix --reinstall` for those
+  theme packages. If a theme APK is no longer available from the current
+  repositories, the restore keeps that theme's backed-up LuCI files as a
+  fallback instead of deleting them.
 - schedules a one-shot first-boot `apk del` for selected LuCI packages and
   Chinese translations that are preinstalled by the new firmware: USB printer,
   nlbwmon, eqos, sqm, PassWall, HomeProxy, qBittorrent, MosDNS, DDNS,
@@ -137,7 +147,9 @@ Set either variable to an empty string to skip that install group.
 
 Configs and service data from the backup are restored normally. Package binaries,
 LuCI files, translations, and APK ownership state are not preserved from the
-backup; they are reinstalled on first boot from the current repositories.
+backup; selected packages, including detected LuCI themes and theme-config
+packages, are reinstalled on first boot from the current repositories. Theme
+files from unavailable APKs are preserved from the backup.
 
 For `/etc/config/fstab`, the default behavior matches an extroot restore flow:
 it restores normal mount points from the backup, but drops backup entries whose
