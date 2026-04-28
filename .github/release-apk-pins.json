@@ -42,9 +42,7 @@
   "nikki": {
     "apks": {
       "luci-app-nikki-1.26.0-r1.apk": "1da947b8c911149d64f9dfd137d73363d7b692e026be6cc45b327f354e4c9675",
-      "luci-i18n-nikki-ru-26.100.26541~bc29251.apk": "3d8291f8883beb220ef345d33d0ff1c499534e1ee18e4c7d5bcdd42c6ae63ec4",
       "luci-i18n-nikki-zh-cn-26.100.26541~bc29251.apk": "1d9c847bdc819f42d6697a1b5c1c2b9241da6f844f7e9197f41a3d37b382c182",
-      "luci-i18n-nikki-zh-tw-26.100.26541~bc29251.apk": "974ac4ee5cd80514c24913e973f029f10fc09d949e85063eb98a773a4b671e59",
       "nikki-2026.04.08-r1.apk": "bc1530588290b861f50ed03bd3f476504566549cf0a4046ac4955439d3c680b4"
     },
     "archive_sha": "7c1b21c4eea6fa29dca580ede2c7777f7cf6ac6c89ac90b1ed0edc3af2e9a53c",
@@ -60,7 +58,6 @@
     "version": "3.11.0"
   },
   "smartdns": {
-    "lite_sha": "98b634ede7b60ebce266f8281785504ade27989e6867624875364837aaf2a8fe",
     "luci_sha": "162a653278ca627dbfb313b761aca685f2338ba1c03ab60c72291c881511a923",
     "main_sha": "48a92a6290b7a7281b6269d08678eb89a64bc49b0dc4f49e7297e8d6e9dfda25",
     "tag": "Release47.1",

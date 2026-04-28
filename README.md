@@ -18,15 +18,12 @@ The workflow downloads these release APKs and adds them to the same signed feed:
 - `luci-i18n-fakehttp-zh-cn`
 - `smartdns`
 - `luci-app-smartdns`
-- `luci-app-smartdns-lite`
 - `bandix`
 - `luci-app-bandix`
 - `luci-i18n-bandix-zh-cn`
 - `nikki`
 - `luci-app-nikki`
-- `luci-i18n-nikki-ru`
 - `luci-i18n-nikki-zh-cn`
-- `luci-i18n-nikki-zh-tw`
 
 The published repository path is:
 
@@ -85,70 +82,76 @@ apk update
 
 ## Restore Script
 
-`router/restore_overlay.sh` probes `MYFEED_BASES` in order and writes the first
-reachable mirror as tagged `@myfeed`. If Cloudflare Pages is unstable, mirror
-the generated `public/` tree to a domestic HTTPS site, keeping this layout:
-
-```text
-public-key.pem
-openwrt-25.12/x86_64/myfeed/packages.adb
-openwrt-25.12/x86_64/myfeed/*.apk
-```
-
-Then prefer that mirror during restore:
+`router/restore_overlay.sh` is intentionally simple. After a firmware upgrade,
+run it with an overlay backup:
 
 ```sh
-MYFEED_BASES="https://core3.cooluc.com/openwrt-packages https://openwrt-packages.pages.dev" /root/post_restore_reinstall.sh
+./router/restore_overlay.sh overlay_backup.tar.gz
 ```
 
-During the post-restore reinstall step, the script tries to start `smartdns`
-and `nikki` before `apk update`, so router-originated package traffic can use
-the restored proxy path. The first restore stage preserves the dependency
-closure for that bootstrap path from the backup APK database, while still
-dropping old `kernel=` and `kmod-*` state.
+It only does this:
 
-The restore step uses tagged `@myfeed` internally so it can force selected
-packages to come from the personal feed. After the post-restore reinstall
-finishes, it switches `00-myfeed.list` back to an untagged repository by
-default. That makes LuCI's package manager install buttons work with myfeed
-packages, because LuCI calls `apk add <package>` rather than
-`apk add <package>@myfeed`. If the untagged feed makes `apk update` fail, the
-script rolls back to tagged `@myfeed`; if that still fails, it disables myfeed
-so official package installs keep working. The compatibility step also removes
-stale `@myfeed` suffixes from `/etc/apk/world`, otherwise ordinary installs can
-fail with "repository tag ... does not exist" after changing the feed mode.
-When myfeed has to be disabled, myfeed-only root packages are removed from
-`/etc/apk/world` as well, leaving already-installed files in place but avoiding
-future `apk add` failures caused by unavailable myfeed packages.
+- clears `/overlay`
+- restores the backup
+- removes old kernel module state from the backup
+- removes old APK/OPKG package-manager state from the backup
+- removes old package files from the backup, except for the temporary runtime
+  packages listed in `RESTORE_KEEP_RUNTIME_PACKAGES`
+- keeps the current system's pre-restore
+  `/etc/apk/repositories.d/distfeeds.list`, so firmware-generated mirrors such
+  as Tencent, cooluc, and core3 are not replaced by the backup or by ROM
+  defaults
+- keeps the current system's pre-restore myfeed repository file and public key,
+  if they already exist
+- removes old LuCI runtime, static files, RPC ACL files, CGI entry files, and
+  common overlay whiteouts so the new firmware uses its own LuCI
+- schedules a one-shot first-boot `apk del` for selected LuCI packages and
+  Chinese translations that are preinstalled by the new firmware: USB printer,
+  nlbwmon, eqos, sqm, PassWall, HomeProxy, qBittorrent, MosDNS, DDNS,
+  AirConnect, AirPlay2, frpc, mentohust, natmap, OpenList2, socat, wolplus,
+  ZeroTier, WireGuard protocol UI, Argon theme, and Argon config
 
-Packages that still fail after restore are quarantined out of `/etc/apk/world`
-before the script exits, including tagged or version-constrained variants. This
-keeps later LuCI or SSH installs from being blocked by failed restore targets.
+It does not add new feeds or run a second manual post-restore step.
 
-By default, `smartdns`, `lucky`, and their LuCI packages are treated as
-backup-kept runtime packages. The first restore stage preserves their package
-files from the backup, and the post-restore reinstall step skips them so `apk
-add` does not overwrite the restored binaries or configs. Override the default
-list with `RESTORE_KEEP_BACKUP_PACKAGES` if needed.
+By default, only `smartdns` and `nikki` runtime files are temporarily kept from
+the backup. The first-boot package action tries to start them before `apk
+update`, which gives the router a chance to use the restored DNS/proxy path if
+Cloudflare Pages or other HTTPS routes are flaky. Their LuCI files and APK
+ownership state are still removed; once the feed is reachable, APK reinstalls
+and takes ownership again. Change that list with `RESTORE_KEEP_RUNTIME_PACKAGES`,
+or set it to an empty string to keep no package runtime files.
 
-The first stage also keeps LuCI files for personal-feed packages as a fallback.
-If myfeed is unreachable during post-restore, those packages are left in place
-from the backup and removed from `/etc/apk/world` instead of being reported as
-missing repository packages.
+On first boot after restore, it installs the official-source `omcproxy` packages.
+It also temporarily rewrites the existing myfeed repository as tagged `@myfeed`,
+installs the personal-feed packages for Bandix, EasyTier, FakeHTTP, Lucky,
+Nikki, rtp2httpd, SmartDNS, their LuCI apps, and their translations with
+`package@myfeed`, then restores myfeed back to an ordinary untagged repository
+and removes `@myfeed` from `/etc/apk/world`.
+If the existing myfeed repository file is missing or cannot be tagged, those
+personal-feed packages are left pending instead of being installed from the
+firmware repositories by accident.
 
-Disable that behavior only for troubleshooting:
+Change the official-source install list with `RESTORE_INSTALL_PACKAGES`.
+Change the forced-myfeed install list with `RESTORE_MYFEED_INSTALL_PACKAGES`.
+Set either variable to an empty string to skip that install group.
+
+Configs and service data from the backup are restored normally. Package binaries,
+LuCI files, translations, and APK ownership state are not preserved from the
+backup; they are reinstalled on first boot from the current repositories.
+
+For `/etc/config/fstab`, the default behavior matches an extroot restore flow:
+it restores normal mount points from the backup, but drops backup entries whose
+target is `/overlay` or `/`, then appends the current system's pre-restore
+extroot entry. That keeps a freshly formatted external overlay while bringing
+back data-disk mounts such as Docker storage.
+
+If you explicitly want the backup's full fstab restored, including its old
+extroot entry, run:
 
 ```sh
-RESTORE_PROXY_UP=0 /root/post_restore_reinstall.sh
+RESTORE_KEEP_EXTROOT=1 ./router/restore_overlay.sh overlay_backup.tar.gz
 ```
 
-Advanced debugging knobs:
-
-```sh
-KEEP_PROXY_UP=0 /root/post_restore_reinstall.sh
-RESTORE_LUCI_WRAPPER=0 /root/post_restore_reinstall.sh
-MYFEED_LUCI_COMPAT=0 /root/post_restore_reinstall.sh
-RESTORE_KEEP_BACKUP_PACKAGES="smartdns lucky luci-app-lucky" /root/post_restore_reinstall.sh
-RESTORE_KEEP_MYFEED_WHEN_FEED_DOWN=0 /root/post_restore_reinstall.sh
-RESTORE_BOOTSTRAP_ROOTS="smartdns nikki" ./router/restore_overlay.sh overlay_backup.tar.gz
-```
+To change which preinstalled LuCI pages are removed, set
+`RESTORE_REMOVE_PREINSTALLED_LUCI_PACKAGES`. Set it to an empty string to skip
+this step.

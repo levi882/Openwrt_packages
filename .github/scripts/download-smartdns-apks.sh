@@ -36,8 +36,3 @@ download_and_check \
   "luci-app-smartdns.${version}.all-luci-all.apk" \
   "$(pin smartdns.luci_sha)" \
   "luci-app-smartdns-${apk_version}.apk"
-
-download_and_check \
-  "luci-app-smartdns-lite.${version}.all-luci-lite-all.apk" \
-  "$(pin smartdns.lite_sha)" \
-  "luci-app-smartdns-lite-${apk_version}.apk"
