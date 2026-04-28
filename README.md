@@ -2,11 +2,8 @@
 
 Personal OpenWrt 25.12 `x86_64` APK feed for packages that are not in the firmware's default repositories.
 
-The workflow downloads or builds these APKs and adds them to the same signed feed:
+The workflow downloads these release APKs and adds them to the same signed feed:
 
-- `luci-theme-aurora`
-- `luci-app-aurora-config`
-- `luci-i18n-aurora-config-zh-cn`
 - `lucky`
 - `luci-app-lucky`
 - `luci-i18n-lucky-zh-cn`
