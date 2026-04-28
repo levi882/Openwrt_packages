@@ -34,12 +34,40 @@ def latest_release(repo):
     return json.loads(data.decode("utf-8"))
 
 
+def branch_head(repo, branch="master"):
+    data = github_request(f"https://api.github.com/repos/{repo}/branches/{branch}")
+    return json.loads(data.decode("utf-8"))["commit"]["sha"]
+
+
 def sha256(data):
     return hashlib.sha256(data).hexdigest()
 
 
 def download_asset(asset):
     return github_request(asset["browser_download_url"])
+
+
+def download_tag_source(repo, tag):
+    return github_request(f"https://github.com/{repo}/archive/{tag}.tar.gz")
+
+
+def source_makefile(data, tag, filename="Makefile"):
+    with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as archive:
+        for member in archive.getmembers():
+            parts = Path(member.name).parts
+            if len(parts) == 2 and parts[1] == filename:
+                file_obj = archive.extractfile(member)
+                if file_obj is None:
+                    break
+                return file_obj.read().decode("utf-8")
+    raise SystemExit(f"Missing {filename} in source archive for {tag}")
+
+
+def makefile_var(makefile, name):
+    match = re.search(rf"^{re.escape(name)}:=(.+)$", makefile, flags=re.MULTILINE)
+    if not match:
+        raise SystemExit(f"Missing {name} in Makefile")
+    return match.group(1).strip()
 
 
 def pick_asset(release, pattern, label):
@@ -312,8 +340,29 @@ def get_nikki():
     }
 
 
+def get_aurora():
+    theme_ref = branch_head("eamonxg/luci-theme-aurora")
+    config_ref = branch_head("eamonxg/luci-app-aurora-config")
+    theme_source = download_tag_source("eamonxg/luci-theme-aurora", theme_ref)
+    config_source = download_tag_source("eamonxg/luci-app-aurora-config", config_ref)
+    theme_makefile = source_makefile(theme_source, theme_ref)
+    config_makefile = source_makefile(config_source, config_ref)
+
+    return {
+        "theme_ref": theme_ref,
+        "theme_version": makefile_var(theme_makefile, "PKG_VERSION"),
+        "theme_release": makefile_var(theme_makefile, "PKG_RELEASE"),
+        "theme_source_sha": sha256(theme_source),
+        "config_ref": config_ref,
+        "config_version": makefile_var(config_makefile, "PKG_VERSION"),
+        "config_release": makefile_var(config_makefile, "PKG_RELEASE"),
+        "config_source_sha": sha256(config_source),
+    }
+
+
 def main():
     print("Checking latest release APKs...")
+    aurora = get_aurora()
     lucky = get_lucky()
     easytier = get_easytier()
     rtp2httpd = get_rtp2httpd()
@@ -324,6 +373,7 @@ def main():
 
     write_pins(
         {
+            "aurora": aurora,
             "bandix": bandix,
             "easytier": easytier,
             "fakehttp": fakehttp,
@@ -335,6 +385,7 @@ def main():
     )
 
     for name, data in [
+        ("Aurora", aurora),
         ("Lucky", lucky),
         ("EasyTier", easytier),
         ("rtp2httpd", rtp2httpd),
@@ -343,7 +394,10 @@ def main():
         ("Bandix", bandix),
         ("Nikki", nikki),
     ]:
-        print(f"{name}: {data['tag']}")
+        if name == "Aurora":
+            print(f"{name}: theme {data['theme_version']}, config {data['config_version']}")
+        else:
+            print(f"{name}: {data['tag']}")
 
 
 if __name__ == "__main__":

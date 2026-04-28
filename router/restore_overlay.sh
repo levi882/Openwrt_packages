@@ -10,7 +10,8 @@ RESTORE_MYFEED_REPO="${RESTORE_MYFEED_REPO:-$RESTORE_MYFEED_BASE/openwrt-25.12/x
 RESTORE_MYFEED_KEY_URL="${RESTORE_MYFEED_KEY_URL:-$RESTORE_MYFEED_BASE/public-key.pem}"
 DEFAULT_INSTALL_PACKAGES="omcproxy luci-app-omcproxy luci-i18n-omcproxy-zh-cn"
 RESTORE_INSTALL_PACKAGES="${RESTORE_INSTALL_PACKAGES-$DEFAULT_INSTALL_PACKAGES}"
-DEFAULT_MYFEED_INSTALL_PACKAGES="bandix luci-app-bandix luci-i18n-bandix-zh-cn easytier luci-app-easytier luci-i18n-easytier-zh-cn fakehttp luci-app-fakehttp luci-i18n-fakehttp-zh-cn lucky luci-app-lucky luci-i18n-lucky-zh-cn nikki luci-app-nikki luci-i18n-nikki-zh-cn rtp2httpd luci-app-rtp2httpd luci-i18n-rtp2httpd-zh-cn smartdns luci-app-smartdns"
+RESTORE_THEME_PACKAGES=""
+DEFAULT_MYFEED_INSTALL_PACKAGES="luci-theme-aurora luci-app-aurora-config luci-i18n-aurora-config-zh-cn bandix luci-app-bandix luci-i18n-bandix-zh-cn easytier luci-app-easytier luci-i18n-easytier-zh-cn fakehttp luci-app-fakehttp luci-i18n-fakehttp-zh-cn lucky luci-app-lucky luci-i18n-lucky-zh-cn nikki luci-app-nikki luci-i18n-nikki-zh-cn rtp2httpd luci-app-rtp2httpd luci-i18n-rtp2httpd-zh-cn smartdns luci-app-smartdns"
 RESTORE_MYFEED_INSTALL_PACKAGES="${RESTORE_MYFEED_INSTALL_PACKAGES-$DEFAULT_MYFEED_INSTALL_PACKAGES}"
 DEFAULT_REMOVE_PREINSTALLED_LUCI_PACKAGES="luci-app-usb-printer luci-i18n-usb-printer-zh-cn luci-app-p910nd luci-i18n-p910nd-zh-cn luci-app-nlbwmon luci-i18n-nlbwmon-zh-cn luci-app-eqos luci-i18n-eqos-zh-cn luci-app-sqm luci-i18n-sqm-zh-cn luci-app-passwall luci-i18n-passwall-zh-cn luci-app-homeproxy luci-i18n-homeproxy-zh-cn luci-app-qbittorrent luci-i18n-qbittorrent-zh-cn luci-app-mosdns luci-i18n-mosdns-zh-cn luci-app-ddns luci-i18n-ddns-zh-cn luci-app-airconnect luci-i18n-airconnect-zh-cn luci-app-airplay2 luci-i18n-airplay2-zh-cn luci-app-frpc luci-i18n-frpc-zh-cn luci-app-mentohust luci-i18n-mentohust-zh-cn luci-app-natmap luci-i18n-natmap-zh-cn luci-app-openlist2 luci-i18n-openlist2-zh-cn luci-app-openlist luci-i18n-openlist-zh-cn luci-app-socat luci-i18n-socat-zh-cn luci-app-wolplus luci-i18n-wolplus-zh-cn luci-app-zerotier luci-i18n-zerotier-zh-cn luci-proto-wireguard luci-i18n-proto-wireguard-zh-cn luci-theme-argon luci-app-argon-config luci-i18n-argon-config-zh-cn"
 RESTORE_REMOVE_PREINSTALLED_LUCI_PACKAGES="${RESTORE_REMOVE_PREINSTALLED_LUCI_PACKAGES-$DEFAULT_REMOVE_PREINSTALLED_LUCI_PACKAGES}"
@@ -144,6 +145,63 @@ merge_fstab_keep_current_extroot() {
 
 merge_fstab_keep_current_extroot
 
+detect_luci_theme_packages() {
+    DB="$UP/lib/apk/db/installed"
+    THEME_LIST="$UP/root/restore-meta/luci-theme-install-list"
+    THEME_FILE_LIST="$UP/root/restore-meta/luci-theme-file-list"
+    : > "$THEME_LIST"
+    : > "$THEME_FILE_LIST"
+
+    [ -s "$DB" ] || return 0
+
+    awk '
+        /^P:/ {
+            pkg = substr($0, 3)
+            if (pkg ~ /^luci-theme[-_]/ ||
+                pkg ~ /^luci-app-.+-config$/ ||
+                pkg ~ /^luci-i18n-.+-config-/)
+                print pkg
+        }
+    ' "$DB" | sort -u > "$THEME_LIST"
+
+    [ -s "$THEME_LIST" ] || return 0
+
+    awk -v theme_file="$THEME_LIST" '
+        BEGIN {
+            while ((getline line < theme_file) > 0) {
+                if (line != "")
+                    keep[line] = 1
+            }
+            close(theme_file)
+        }
+        /^P:/ {
+            pkg = substr($0, 3)
+            selected = (pkg in keep)
+            dir = ""
+            next
+        }
+        /^F:/ {
+            dir = substr($0, 3)
+            next
+        }
+        /^R:/ && selected && dir != "" {
+            path = dir "/" substr($0, 3)
+            if (path !~ /^(lib\/apk\/|etc\/apk\/|usr\/lib\/opkg\/|etc\/opkg\/)/)
+                print path
+        }
+    ' "$DB" | sort -u > "$THEME_FILE_LIST"
+
+    THEME_PACKAGES="$(tr '\n' ' ' < "$THEME_LIST")"
+    RESTORE_THEME_PACKAGES="$THEME_PACKAGES"
+    RESTORE_INSTALL_PACKAGES="$(
+        printf '%s\n' $RESTORE_INSTALL_PACKAGES $THEME_PACKAGES |
+            awk 'NF && !seen[$0]++ { out = out (out ? " " : "") $0 } END { print out }'
+    )"
+    echo "将从当前软件源重新安装备份中已安装的 LuCI 主题包：$THEME_PACKAGES"
+}
+
+detect_luci_theme_packages
+
 prune_backup_package_files() {
     DB="$UP/lib/apk/db/installed"
     [ -s "$DB" ] || {
@@ -157,7 +215,7 @@ prune_backup_package_files() {
     : > "$KEEP_LIST"
     : > "$DROP_LIST"
 
-    awk -v keep_pkgs="$RESTORE_KEEP_RUNTIME_PACKAGES" '
+    awk -v keep_pkgs="$RESTORE_KEEP_RUNTIME_PACKAGES $RESTORE_THEME_PACKAGES" '
         BEGIN {
             split(keep_pkgs, a, /[ \t]+/)
             for (i in a) {
@@ -275,6 +333,7 @@ KEEP_RUNTIME_PKGS="$RESTORE_KEEP_RUNTIME_PACKAGES"
 MYFEED_KEY_URL="$RESTORE_MYFEED_KEY_URL"
 REMOVE_PKGS="$RESTORE_REMOVE_PREINSTALLED_LUCI_PACKAGES"
 INSTALL_PKGS="$RESTORE_INSTALL_PACKAGES"
+THEME_PKGS="$RESTORE_THEME_PACKAGES"
 MYFEED_INSTALL_PKGS="$RESTORE_MYFEED_INSTALL_PACKAGES"
 
 run_restore_package_actions() {
@@ -283,6 +342,7 @@ run_restore_package_actions() {
         date
         echo "remove packages: \$REMOVE_PKGS"
         echo "install packages: \$INSTALL_PKGS"
+        echo "theme packages to repair: \$THEME_PKGS"
         echo "myfeed install packages: \$MYFEED_INSTALL_PKGS"
     } >> "\$LOG"
 
@@ -361,6 +421,17 @@ run_restore_package_actions() {
         while [ "\$ATTEMPT" -le 12 ]; do
             echo "apk update attempt \$ATTEMPT/12" >> "\$LOG"
             if apk update >> "\$LOG" 2>&1; then
+                FIX_LIST=""
+                for PKG in \$THEME_PKGS; do
+                    apk info -e "\$PKG" >/dev/null 2>&1 || continue
+                    FIX_LIST="\$FIX_LIST \$PKG"
+                done
+                if [ -n "\$FIX_LIST" ]; then
+                    echo "apk fix --reinstall:\$FIX_LIST" >> "\$LOG"
+                    apk fix --reinstall \$FIX_LIST >> "\$LOG" 2>&1 || \
+                        echo "WARNING: apk fix returned non-zero" >> "\$LOG"
+                fi
+
                 INSTALL_LIST=""
                 for PKG in \$INSTALL_PKGS; do
                     apk info -e "\$PKG" >/dev/null 2>&1 && continue
@@ -433,6 +504,38 @@ EOF
 }
 
 echo "删除旧 LuCI 运行时和缓存状态..."
+save_luci_theme_files() {
+    THEME_FILE_LIST="$UP/root/restore-meta/luci-theme-file-list"
+    THEME_BACKUP="$UP/root/restore-meta/luci-theme-files.tar.gz"
+
+    [ -s "$THEME_FILE_LIST" ] || return 0
+
+    (
+        cd "$UP"
+        EXISTING_LIST="root/restore-meta/luci-theme-file-list.existing"
+        : > "$EXISTING_LIST"
+        while IFS= read -r REL; do
+            [ -n "$REL" ] || continue
+            case "$REL" in
+                /*|../*|*/../*|..|*/..) continue ;;
+            esac
+            [ -e "$REL" ] || continue
+            printf '%s\n' "$REL" >> "$EXISTING_LIST"
+        done < "root/restore-meta/luci-theme-file-list"
+        [ -s "$EXISTING_LIST" ] || exit 0
+        tar -czf "root/restore-meta/luci-theme-files.tar.gz" -T "$EXISTING_LIST"
+    )
+}
+
+restore_luci_theme_files() {
+    THEME_BACKUP="$UP/root/restore-meta/luci-theme-files.tar.gz"
+    [ -s "$THEME_BACKUP" ] || return 0
+    tar -xzf "$THEME_BACKUP" -C "$UP"
+    echo "已从备份还原 LuCI 主题文件，供当前源不可用的主题继续显示"
+}
+
+save_luci_theme_files
+
 rm -rf "$UP/usr/lib/lua/luci"
 rm -rf "$UP/usr/share/luci"
 rm -rf "$UP/usr/share/ucode/luci"
@@ -456,6 +559,8 @@ rm -f "$UP/www/.wh..wh..opq"
 rm -f "$UP/www/cgi-bin/.wh..wh..opq"
 rm -f "$UP/usr/share/rpcd/acl.d/.wh..wh..opq"
 rm -f "$UP/usr/libexec/rpcd/.wh..wh..opq"
+
+restore_luci_theme_files
 
 schedule_package_actions
 
