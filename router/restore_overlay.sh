@@ -21,6 +21,23 @@ DISTFEEDS_BEFORE_RESTORE=/tmp/restore-distfeeds.before-restore
 MYFEED_BEFORE_RESTORE=/tmp/restore-myfeed.before-restore
 MYFEED_KEY_BEFORE_RESTORE=/tmp/restore-myfeed-key.before-restore
 
+dedupe_apk_repo_file() {
+    FILE="$1"
+    [ -f "$FILE" ] || return 0
+    TMP="${FILE}.dedupe.$$"
+    awk '
+        {
+            line = $0
+            sub(/\r$/, "", line)
+            if (line ~ /^[[:space:]]*$/ || line ~ /^[[:space:]]*#/) {
+                print line
+                next
+            }
+            if (!seen[line]++) print line
+        }
+    ' "$FILE" > "$TMP" && mv "$TMP" "$FILE"
+}
+
 [ -f "$BACKUP_FILE" ] || {
     echo "用法：restore_overlay.sh 备份文件"
     exit 1
@@ -51,6 +68,7 @@ fi
 rm -f "$DISTFEEDS_BEFORE_RESTORE"
 if [ -f /etc/apk/repositories.d/distfeeds.list ]; then
     cp /etc/apk/repositories.d/distfeeds.list "$DISTFEEDS_BEFORE_RESTORE"
+    dedupe_apk_repo_file "$DISTFEEDS_BEFORE_RESTORE"
 fi
 
 rm -f "$MYFEED_BEFORE_RESTORE" "$MYFEED_KEY_BEFORE_RESTORE"
@@ -154,12 +172,20 @@ detect_luci_theme_packages() {
 
     [ -s "$DB" ] || return 0
 
-    awk '
+    awk -v remove_pkgs="$RESTORE_REMOVE_PREINSTALLED_LUCI_PACKAGES" '
+        BEGIN {
+            split(remove_pkgs, a, /[ \t]+/)
+            for (i in a) {
+                if (a[i] != "")
+                    remove[a[i]] = 1
+            }
+        }
         /^P:/ {
             pkg = substr($0, 3)
-            if (pkg ~ /^luci-theme[-_]/ ||
-                pkg ~ /^luci-app-.+-config$/ ||
-                pkg ~ /^luci-i18n-.+-config-/)
+            if (!(pkg in remove) &&
+                (pkg ~ /^luci-theme[-_]/ ||
+                 pkg ~ /^luci-app-.+-config$/ ||
+                 pkg ~ /^luci-i18n-.+-config-/))
                 print pkg
         }
     ' "$DB" | sort -u > "$THEME_LIST"
@@ -293,6 +319,7 @@ rm -rf "$UP/etc/opkg"
 if [ -s "$DISTFEEDS_BEFORE_RESTORE" ]; then
     mkdir -p "$UP/etc/apk/repositories.d"
     cp "$DISTFEEDS_BEFORE_RESTORE" "$UP/etc/apk/repositories.d/distfeeds.list"
+    dedupe_apk_repo_file "$UP/etc/apk/repositories.d/distfeeds.list"
     echo "已保留恢复前当前系统的软件源：/etc/apk/repositories.d/distfeeds.list"
 fi
 
@@ -351,6 +378,34 @@ run_restore_package_actions() {
     MYFEED_TAGGED=0
     MYFEED_PENDING=0
 
+    dedupe_apk_repo_files() {
+        SEEN=/tmp/restore-apk-repo-seen.\$\$
+        : > "\$SEEN"
+        for FILE in /etc/apk/repositories.d/*.list; do
+            [ -f "\$FILE" ] || continue
+            TMP="/tmp/\$(basename "\$FILE").dedupe.\$\$"
+            awk -v seen_file="\$SEEN" '
+                BEGIN {
+                    while ((getline line < seen_file) > 0) seen[line] = 1
+                    close(seen_file)
+                }
+                {
+                    line = \$0
+                    sub(/\r\$/, "", line)
+                    if (line ~ /^[[:space:]]*\$/ || line ~ /^[[:space:]]*#/) {
+                        print line
+                        next
+                    }
+                    if (!seen[line]++) {
+                        print line
+                        print line >> seen_file
+                    }
+                }
+            ' "\$FILE" > "\$TMP" && mv "\$TMP" "\$FILE"
+        done
+        rm -f "\$SEEN"
+    }
+
     normalize_myfeed_repo() {
         [ -n "\$MYFEED_REPO" ] || return 0
         echo "\$MYFEED_REPO" > "\$MYFEED_FILE"
@@ -397,6 +452,7 @@ run_restore_package_actions() {
 
     start_kept_runtime
     sleep 5
+    dedupe_apk_repo_files
 
     REMOVE_LIST=""
     for PKG in \$REMOVE_PKGS; do
