@@ -229,17 +229,11 @@ def get_smartdns():
         rf"luci-app-smartdns\.{re.escape(version)}\.all-luci-all\.apk",
         "SmartDNS LuCI APK",
     )
-    lite, _ = pick_asset(
-        release,
-        rf"luci-app-smartdns-lite\.{re.escape(version)}\.all-luci-lite-all\.apk",
-        "SmartDNS lite LuCI APK",
-    )
     return {
         "tag": release["tag_name"],
         "version": version,
         "main_sha": sha256(download_asset(main)),
         "luci_sha": sha256(download_asset(luci)),
-        "lite_sha": sha256(download_asset(lite)),
     }
 
 
@@ -299,6 +293,16 @@ def get_nikki():
 
     if not apks:
         raise SystemExit(f"No APK files found in {asset['name']}")
+
+    excluded_apks = (
+        r"luci-i18n-nikki-ru-.+\.apk",
+        r"luci-i18n-nikki-zh-tw-.+\.apk",
+    )
+    apks = {
+        name: digest
+        for name, digest in apks.items()
+        if not any(re.fullmatch(pattern, name) for pattern in excluded_apks)
+    }
 
     return {
         "tag": release["tag_name"],
