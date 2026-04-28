@@ -312,8 +312,41 @@ def get_nikki():
     }
 
 
+def get_aurora():
+    theme_release = latest_release("eamonxg/luci-theme-aurora")
+    theme, theme_match = pick_asset(
+        theme_release,
+        r"luci-theme-aurora-(?P<version>.+)\.apk",
+        "Aurora theme APK",
+    )
+
+    config_release = latest_release("eamonxg/luci-app-aurora-config")
+    config, config_match = pick_asset(
+        config_release,
+        r"luci-app-aurora-config-(?P<version>.+)\.apk",
+        "Aurora config LuCI APK",
+    )
+    i18n, i18n_match = pick_asset(
+        config_release,
+        r"luci-i18n-aurora-config-zh-cn-(?P<version>.+)\.apk",
+        "Aurora config zh-cn APK",
+    )
+
+    return {
+        "theme_tag": theme_release["tag_name"],
+        "theme_version": theme_match.group("version"),
+        "theme_sha": sha256(download_asset(theme)),
+        "config_tag": config_release["tag_name"],
+        "config_version": config_match.group("version"),
+        "config_sha": sha256(download_asset(config)),
+        "i18n_version": i18n_match.group("version"),
+        "i18n_sha": sha256(download_asset(i18n)),
+    }
+
+
 def main():
     print("Checking latest release APKs...")
+    aurora = get_aurora()
     lucky = get_lucky()
     easytier = get_easytier()
     rtp2httpd = get_rtp2httpd()
@@ -324,6 +357,7 @@ def main():
 
     write_pins(
         {
+            "aurora": aurora,
             "bandix": bandix,
             "easytier": easytier,
             "fakehttp": fakehttp,
@@ -335,6 +369,7 @@ def main():
     )
 
     for name, data in [
+        ("Aurora", aurora),
         ("Lucky", lucky),
         ("EasyTier", easytier),
         ("rtp2httpd", rtp2httpd),
@@ -343,7 +378,10 @@ def main():
         ("Bandix", bandix),
         ("Nikki", nikki),
     ]:
-        print(f"{name}: {data['tag']}")
+        if name == "Aurora":
+            print(f"{name}: theme {data['theme_tag']}, config {data['config_tag']}")
+        else:
+            print(f"{name}: {data['tag']}")
 
 
 if __name__ == "__main__":

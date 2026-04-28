@@ -1,4 +1,14 @@
 {
+  "aurora": {
+    "config_sha": "4f221411ebd9e1eb28829722a5f8d806cfca95101674d245253829661a8fcdc3",
+    "config_tag": "v0.3.0",
+    "config_version": "0.3.0-r20260208",
+    "i18n_sha": "d471416e34a7ece65fc728e2876f1d86f5002b04f9769a707089a55910a890ff",
+    "i18n_version": "26.037.70024.95fddff",
+    "theme_sha": "0e07aeb2d47273d15d6d499e037dac74089ddd500d13c004e636efd86bebccca",
+    "theme_tag": "v0.11.0",
+    "theme_version": "0.11.0-r20260208"
+  },
   "bandix": {
     "i18n_sha": "26bed75050c5ef7e2dce2143b5d0b22401b4cab71f5dbf04ebcd01542b8299a0",
     "i18n_version": "26.115.23589.49c1ba8",
