@@ -38,6 +38,9 @@ jobs:
       - name: create feed directory
         run: mkdir -p "bin/packages/${OPENWRT_ARCH}/${FEED_NAME}"
 
+      - name: add Aurora release apks
+        run: bash .github/scripts/download-aurora-apks.sh "bin/packages/${OPENWRT_ARCH}/${FEED_NAME}"
+
       - name: add Lucky release apks
         run: bash .github/scripts/download-lucky-apks.sh "bin/packages/${OPENWRT_ARCH}/${FEED_NAME}"
 
