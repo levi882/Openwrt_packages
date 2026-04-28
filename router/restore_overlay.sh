@@ -172,12 +172,20 @@ detect_luci_theme_packages() {
 
     [ -s "$DB" ] || return 0
 
-    awk '
+    awk -v remove_pkgs="$RESTORE_REMOVE_PREINSTALLED_LUCI_PACKAGES" '
+        BEGIN {
+            split(remove_pkgs, a, /[ \t]+/)
+            for (i in a) {
+                if (a[i] != "")
+                    remove[a[i]] = 1
+            }
+        }
         /^P:/ {
             pkg = substr($0, 3)
-            if (pkg ~ /^luci-theme[-_]/ ||
-                pkg ~ /^luci-app-.+-config$/ ||
-                pkg ~ /^luci-i18n-.+-config-/)
+            if (!(pkg in remove) &&
+                (pkg ~ /^luci-theme[-_]/ ||
+                 pkg ~ /^luci-app-.+-config$/ ||
+                 pkg ~ /^luci-i18n-.+-config-/))
                 print pkg
         }
     ' "$DB" | sort -u > "$THEME_LIST"
