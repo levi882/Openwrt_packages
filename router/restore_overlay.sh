@@ -3,13 +3,22 @@ set -e
 
 BACKUP_FILE="$1"
 RESTORE_KEEP_EXTROOT="${RESTORE_KEEP_EXTROOT:-0}"
-DEFAULT_KEEP_RUNTIME_PACKAGES="smartdns nikki"
+DEFAULT_KEEP_RUNTIME_PACKAGES="smartdns nikki rtp2httpd"
 RESTORE_KEEP_RUNTIME_PACKAGES="${RESTORE_KEEP_RUNTIME_PACKAGES-$DEFAULT_KEEP_RUNTIME_PACKAGES}"
 RESTORE_MYFEED_BASE="${RESTORE_MYFEED_BASE:-https://openwrt-packages.pages.dev}"
 RESTORE_MYFEED_REPO="${RESTORE_MYFEED_REPO:-$RESTORE_MYFEED_BASE/openwrt-25.12/x86_64/myfeed/packages.adb}"
 RESTORE_MYFEED_KEY_URL="${RESTORE_MYFEED_KEY_URL:-$RESTORE_MYFEED_BASE/public-key.pem}"
-DEFAULT_INSTALL_PACKAGES="omcproxy luci-app-omcproxy luci-i18n-omcproxy-zh-cn"
+DEFAULT_INSTALL_PACKAGES="omcproxy luci-app-omcproxy luci-i18n-omcproxy-zh-cn python3 python3-requests tcpdump curl bash"
 RESTORE_INSTALL_PACKAGES="${RESTORE_INSTALL_PACKAGES-$DEFAULT_INSTALL_PACKAGES}"
+RESTORE_IPTV_ENABLE="${RESTORE_IPTV_ENABLE:-1}"
+RESTORE_IPTV_REPO_ROOT="${RESTORE_IPTV_REPO_ROOT:-/mnt/sda1/iptv}"
+RESTORE_IPTV_REFRESH_TOKEN="${RESTORE_IPTV_REFRESH_TOKEN:-}"
+RESTORE_IPTV_REFRESH_IFACE="${RESTORE_IPTV_REFRESH_IFACE:-eth3.3927}"
+RESTORE_IPTV_REFRESH_HOST="${RESTORE_IPTV_REFRESH_HOST:-127.0.0.1}"
+RESTORE_IPTV_REFRESH_PORT="${RESTORE_IPTV_REFRESH_PORT:-9099}"
+RESTORE_IPTV_REFRESH_ALLOW_IPS="${RESTORE_IPTV_REFRESH_ALLOW_IPS:-127.0.0.1}"
+RESTORE_IPTV_NGINX_LOCATIONS="${RESTORE_IPTV_NGINX_LOCATIONS:-/etc/nginx/conf.d/iptv-refresh.locations}"
+RESTORE_IPTV_NGINX_SERVER_CONF="${RESTORE_IPTV_NGINX_SERVER_CONF:-}"
 RESTORE_THEME_PACKAGES=""
 RESTORE_THEME_REPAIR_PACKAGES=""
 DEFAULT_MYFEED_INSTALL_PACKAGES="luci-theme-aurora luci-app-aurora-config luci-i18n-aurora-config-zh-cn bandix luci-app-bandix luci-i18n-bandix-zh-cn easytier luci-app-easytier luci-i18n-easytier-zh-cn lucky luci-app-lucky luci-i18n-lucky-zh-cn nikki luci-app-nikki luci-i18n-nikki-zh-cn rtp2httpd luci-app-rtp2httpd luci-i18n-rtp2httpd-zh-cn smartdns luci-app-smartdns"
@@ -21,6 +30,21 @@ FSTAB_BEFORE_RESTORE=/tmp/restore-fstab.before-restore
 DISTFEEDS_BEFORE_RESTORE=/tmp/restore-distfeeds.before-restore
 MYFEED_BEFORE_RESTORE=/tmp/restore-myfeed.before-restore
 MYFEED_KEY_BEFORE_RESTORE=/tmp/restore-myfeed-key.before-restore
+
+if [ "$RESTORE_IPTV_ENABLE" = "1" ] && [ -z "$RESTORE_IPTV_REFRESH_TOKEN" ]; then
+    if command -v hexdump >/dev/null 2>&1; then
+        RESTORE_IPTV_REFRESH_TOKEN="$(hexdump -n 16 -e '16/1 "%02x"' /dev/urandom 2>/dev/null || true)"
+    fi
+    [ -n "$RESTORE_IPTV_REFRESH_TOKEN" ] || RESTORE_IPTV_REFRESH_TOKEN="iptv-$(date +%s)"
+fi
+if [ "$RESTORE_IPTV_ENABLE" = "1" ]; then
+    case "$RESTORE_IPTV_REFRESH_TOKEN" in
+        ""|*[!A-Za-z0-9._~-]*)
+            echo "ERROR: RESTORE_IPTV_REFRESH_TOKEN must use only URL-safe characters: A-Z a-z 0-9 . _ ~ -" >&2
+            exit 1
+            ;;
+    esac
+fi
 
 dedupe_apk_repo_file() {
     FILE="$1"
@@ -425,7 +449,8 @@ fi
 schedule_package_actions() {
     [ -n "$RESTORE_REMOVE_PREINSTALLED_LUCI_PACKAGES" ] || \
     [ -n "$RESTORE_INSTALL_PACKAGES" ] || \
-    [ -n "$RESTORE_MYFEED_INSTALL_PACKAGES" ] || {
+    [ -n "$RESTORE_MYFEED_INSTALL_PACKAGES" ] || \
+    [ "$RESTORE_IPTV_ENABLE" = "1" ] || {
         echo "RESTORE_REMOVE_PREINSTALLED_LUCI_PACKAGES、RESTORE_INSTALL_PACKAGES 和 RESTORE_MYFEED_INSTALL_PACKAGES 均为空，跳过重启后包操作"
         return 0
     }
@@ -445,6 +470,15 @@ REMOVE_PKGS="$RESTORE_REMOVE_PREINSTALLED_LUCI_PACKAGES"
 INSTALL_PKGS="$RESTORE_INSTALL_PACKAGES"
 THEME_REPAIR_PKGS="$RESTORE_THEME_REPAIR_PACKAGES"
 MYFEED_INSTALL_PKGS="$RESTORE_MYFEED_INSTALL_PACKAGES"
+IPTV_ENABLE="$RESTORE_IPTV_ENABLE"
+IPTV_REPO_ROOT="$RESTORE_IPTV_REPO_ROOT"
+IPTV_REFRESH_TOKEN="$RESTORE_IPTV_REFRESH_TOKEN"
+IPTV_REFRESH_IFACE="$RESTORE_IPTV_REFRESH_IFACE"
+IPTV_REFRESH_HOST="$RESTORE_IPTV_REFRESH_HOST"
+IPTV_REFRESH_PORT="$RESTORE_IPTV_REFRESH_PORT"
+IPTV_REFRESH_ALLOW_IPS="$RESTORE_IPTV_REFRESH_ALLOW_IPS"
+IPTV_NGINX_LOCATIONS="$RESTORE_IPTV_NGINX_LOCATIONS"
+IPTV_NGINX_SERVER_CONF="$RESTORE_IPTV_NGINX_SERVER_CONF"
 
 run_restore_package_actions() {
     {
@@ -551,6 +585,269 @@ run_restore_package_actions() {
                 mv /tmp/world.no-myfeed.\$\$ /etc/apk/world
         fi
         echo "myfeed restored to ordinary repo: \$MYFEED_REPO" >> "\$LOG"
+    }
+
+    ensure_nginx_iptv_locations() {
+        [ -d /etc/nginx ] || {
+            echo "nginx config dir not found, skip iptv nginx locations" >> "\$LOG"
+            return 0
+        }
+
+        NGINX_LOC="\$IPTV_NGINX_LOCATIONS"
+        [ -n "\$NGINX_LOC" ] || NGINX_LOC=/etc/nginx/conf.d/iptv-refresh.locations
+        mkdir -p "\$(dirname "\$NGINX_LOC")"
+
+        NGINX_LOC_BACKUP="/tmp/iptv-nginx-locations.\$\$"
+        NGINX_LOC_HAD=0
+        if [ -f "\$NGINX_LOC" ]; then
+            cp "\$NGINX_LOC" "\$NGINX_LOC_BACKUP"
+            NGINX_LOC_HAD=1
+        fi
+
+        restore_nginx_location_file() {
+            if [ "\$NGINX_LOC_HAD" = "1" ]; then
+                cp "\$NGINX_LOC_BACKUP" "\$NGINX_LOC"
+            else
+                rm -f "\$NGINX_LOC"
+            fi
+        }
+
+        test_nginx_config() {
+            command -v nginx >/dev/null 2>&1 || return 0
+            nginx -t >> "\$LOG" 2>&1
+        }
+
+        cat > "\$NGINX_LOC" <<'NGINX_IPTV_EOF'
+location = /iptv/refresh {
+    proxy_pass http://127.0.0.1:__IPTV_REFRESH_PORT__/refresh?token=__IPTV_REFRESH_TOKEN__&\$args;
+    proxy_http_version 1.1;
+    proxy_set_header Host \$host;
+    proxy_set_header Connection "";
+    proxy_connect_timeout 5s;
+    proxy_send_timeout 15s;
+    proxy_read_timeout 15s;
+    proxy_buffering off;
+}
+
+location = /iptv/healthz {
+    proxy_pass http://127.0.0.1:__IPTV_REFRESH_PORT__/healthz;
+    proxy_http_version 1.1;
+    proxy_set_header Host \$host;
+    proxy_set_header Connection "";
+    proxy_connect_timeout 5s;
+    proxy_send_timeout 15s;
+    proxy_read_timeout 15s;
+    proxy_buffering off;
+}
+NGINX_IPTV_EOF
+        sed -i "s/__IPTV_REFRESH_PORT__/\$IPTV_REFRESH_PORT/g" "\$NGINX_LOC"
+        sed -i "s/__IPTV_REFRESH_TOKEN__/\$IPTV_REFRESH_TOKEN/g" "\$NGINX_LOC"
+
+        if grep -Rqs "\.locations" /etc/nginx 2>/dev/null; then
+            if ! test_nginx_config; then
+                echo "WARNING: nginx test failed after writing \$NGINX_LOC; rolling back location file" >> "\$LOG"
+                restore_nginx_location_file
+                test_nginx_config >/dev/null 2>&1 || true
+                rm -f "\$NGINX_LOC_BACKUP"
+                return 0
+            fi
+            echo "nginx already includes locations files; wrote \$NGINX_LOC" >> "\$LOG"
+            rm -f "\$NGINX_LOC_BACKUP"
+            return 0
+        fi
+
+        NGINX_SERVER_CONF=""
+        if [ -n "\$IPTV_NGINX_SERVER_CONF" ]; then
+            if [ -f "\$IPTV_NGINX_SERVER_CONF" ]; then
+                NGINX_SERVER_CONF="\$IPTV_NGINX_SERVER_CONF"
+            else
+                echo "WARNING: RESTORE_IPTV_NGINX_SERVER_CONF not found: \$IPTV_NGINX_SERVER_CONF" >> "\$LOG"
+            fi
+        fi
+        if [ -z "\$NGINX_SERVER_CONF" ]; then
+            for FILE in /etc/nginx/conf.d/*.conf /etc/nginx/sites-enabled/* /etc/nginx/nginx.conf; do
+                [ -f "\$FILE" ] || continue
+                grep -q "server[[:space:]]*{" "\$FILE" || continue
+                grep -q "listen[[:space:]]" "\$FILE" || continue
+                NGINX_SERVER_CONF="\$FILE"
+                break
+            done
+        fi
+
+        [ -n "\$NGINX_SERVER_CONF" ] || {
+            echo "WARNING: no nginx server config found; wrote \$NGINX_LOC but did not add include" >> "\$LOG"
+            rm -f "\$NGINX_LOC_BACKUP"
+            return 0
+        }
+
+        INCLUDE_LINE="    include \$NGINX_LOC;"
+        grep -Fqs "\$NGINX_LOC" "\$NGINX_SERVER_CONF" && {
+            if ! test_nginx_config; then
+                echo "WARNING: nginx test failed after writing included \$NGINX_LOC; rolling back location file" >> "\$LOG"
+                restore_nginx_location_file
+                test_nginx_config >/dev/null 2>&1 || true
+                rm -f "\$NGINX_LOC_BACKUP"
+                return 0
+            fi
+            echo "nginx server already includes \$NGINX_LOC" >> "\$LOG"
+            rm -f "\$NGINX_LOC_BACKUP"
+            return 0
+        }
+
+        TMP="/tmp/nginx-iptv-conf.\$\$"
+        NGINX_SERVER_BACKUP="/tmp/iptv-nginx-server.\$\$"
+        cp "\$NGINX_SERVER_CONF" "\$NGINX_SERVER_BACKUP"
+        awk -v include_line="\$INCLUDE_LINE" '
+            function brace_delta(line,    t, opens, closes) {
+                t = line
+                opens = gsub(/\{/, "{", t)
+                t = line
+                closes = gsub(/\}/, "}", t)
+                return opens - closes
+            }
+            {
+                line = \$0
+                if (!inserted && !in_server && line ~ /^[[:space:]]*server[[:space:]]*\{/) {
+                    in_server = 1
+                    depth = 0
+                }
+
+                if (in_server && !inserted && depth > 0 &&
+                    line ~ /^[[:space:]]*}[[:space:]]*$/ &&
+                    depth + brace_delta(line) <= 0) {
+                        print include_line
+                    inserted = 1
+                    in_server = 0
+                }
+
+                print line
+
+                if (in_server)
+                    depth += brace_delta(line)
+            }
+            END {
+                if (!inserted)
+                    exit 1
+            }
+        ' "\$NGINX_SERVER_CONF" > "\$TMP" && mv "\$TMP" "\$NGINX_SERVER_CONF" || {
+            echo "WARNING: failed to insert nginx include into \$NGINX_SERVER_CONF" >> "\$LOG"
+            cp "\$NGINX_SERVER_BACKUP" "\$NGINX_SERVER_CONF"
+            restore_nginx_location_file
+            rm -f "\$TMP" "\$NGINX_SERVER_BACKUP" "\$NGINX_LOC_BACKUP"
+            return 0
+        }
+
+        if ! test_nginx_config; then
+            echo "WARNING: nginx test failed after adding IPTV include; rolling back nginx config" >> "\$LOG"
+            cp "\$NGINX_SERVER_BACKUP" "\$NGINX_SERVER_CONF"
+            restore_nginx_location_file
+            test_nginx_config >/dev/null 2>&1 || true
+            rm -f "\$NGINX_SERVER_BACKUP" "\$NGINX_LOC_BACKUP"
+            return 0
+        fi
+
+        rm -f "\$NGINX_SERVER_BACKUP" "\$NGINX_LOC_BACKUP"
+
+        echo "added iptv nginx include to \$NGINX_SERVER_CONF: \$NGINX_LOC" >> "\$LOG"
+    }
+
+    restore_iptv_refresh_httpd() {
+        [ "\$IPTV_ENABLE" = "1" ] || {
+            echo "IPTV restore disabled" >> "\$LOG"
+            return 0
+        }
+        [ -d "\$IPTV_REPO_ROOT/scripts" ] || {
+            echo "iptv repo not found, skip refresh httpd: \$IPTV_REPO_ROOT" >> "\$LOG"
+            return 0
+        }
+        [ -f "\$IPTV_REPO_ROOT/scripts/iptv_refresh_httpd.py" ] || {
+            echo "iptv_refresh_httpd.py not found, skip: \$IPTV_REPO_ROOT" >> "\$LOG"
+            return 0
+        }
+
+        echo "restore iptv refresh httpd from: \$IPTV_REPO_ROOT" >> "\$LOG"
+        chmod +x "\$IPTV_REPO_ROOT/scripts/launch_iptv_refresh.sh" 2>/dev/null || true
+        chmod +x "\$IPTV_REPO_ROOT/scripts/refresh_iptv.sh" 2>/dev/null || true
+        chmod +x "\$IPTV_REPO_ROOT/scripts/"*.sh 2>/dev/null || true
+        mkdir -p "\$IPTV_REPO_ROOT/output/log" "\$IPTV_REPO_ROOT/scripts/cache" "\$IPTV_REPO_ROOT/config/local" /www/iptv_epg
+        ln -sf "\$IPTV_REPO_ROOT/scripts/cache/e1.xml.gz" /www/iptv_epg/e1.xml.gz
+
+        cat > /etc/iptv-refresh-httpd.conf <<IPTV_CONF_EOF
+REPO_ROOT='\$IPTV_REPO_ROOT'
+TOKEN='\$IPTV_REFRESH_TOKEN'
+LISTEN_HOST='\$IPTV_REFRESH_HOST'
+LISTEN_PORT='\$IPTV_REFRESH_PORT'
+DEFAULT_IFACE='\$IPTV_REFRESH_IFACE'
+ALLOW_IPS='\$IPTV_REFRESH_ALLOW_IPS'
+IPTV_CONF_EOF
+        chmod 600 /etc/iptv-refresh-httpd.conf
+
+        cat > "\$IPTV_REPO_ROOT/config/local/iptv_refresh.env" <<IPTV_REFRESH_ENV_EOF
+IPTV_REFRESH_TOKEN='\$IPTV_REFRESH_TOKEN'
+IPTV_REFRESH_IFACE='\$IPTV_REFRESH_IFACE'
+IPTV_REFRESH_URL='http://10.1.1.1/iptv/refresh?iface=\$IPTV_REFRESH_IFACE'
+IPTV_REFRESH_HEALTHZ_URL='http://10.1.1.1/iptv/healthz'
+IPTV_REFRESH_ENV_EOF
+        chmod 600 "\$IPTV_REPO_ROOT/config/local/iptv_refresh.env"
+
+        cat > "\$IPTV_REPO_ROOT/config/local/home_assistant_rest_command.yaml" <<IPTV_HA_EOF
+rest_command:
+  iptv_refresh:
+    url: "http://10.1.1.1/iptv/refresh?iface=\$IPTV_REFRESH_IFACE"
+    method: GET
+IPTV_HA_EOF
+        chmod 600 "\$IPTV_REPO_ROOT/config/local/home_assistant_rest_command.yaml"
+
+        cat > /etc/init.d/iptv-refresh-httpd <<'IPTV_INIT_EOF'
+#!/bin/sh /etc/rc.common
+
+START=99
+USE_PROCD=1
+
+CONFIG_FILE="/etc/iptv-refresh-httpd.conf"
+REPO_ROOT="/mnt/sda1/iptv"
+TOKEN="change-me"
+LISTEN_HOST="127.0.0.1"
+LISTEN_PORT="9099"
+DEFAULT_IFACE="eth3.3927"
+ALLOW_IPS="127.0.0.1"
+
+[ -f "\$CONFIG_FILE" ] && . "\$CONFIG_FILE"
+
+start_service() {
+    [ -f "\$REPO_ROOT/scripts/iptv_refresh_httpd.py" ] || return 1
+
+    procd_open_instance
+    procd_set_param command /usr/bin/python3 \
+        "\$REPO_ROOT/scripts/iptv_refresh_httpd.py" \
+        --host "\$LISTEN_HOST" \
+        --port "\$LISTEN_PORT" \
+        --repo-root "\$REPO_ROOT" \
+        --launcher-path "\$REPO_ROOT/scripts/launch_iptv_refresh.sh" \
+        --token "\$TOKEN"
+    for ALLOW_IP in \$ALLOW_IPS; do
+        procd_append_param command --allow-ip "\$ALLOW_IP"
+    done
+    procd_append_param command --default-iface "\$DEFAULT_IFACE"
+    procd_set_param respawn
+    procd_set_param stdout 1
+    procd_set_param stderr 1
+    procd_close_instance
+}
+IPTV_INIT_EOF
+        chmod +x /etc/init.d/iptv-refresh-httpd
+
+        ensure_nginx_iptv_locations
+
+        if [ -x /etc/init.d/rtp2httpd ]; then
+            /etc/init.d/rtp2httpd enable >> "\$LOG" 2>&1 || true
+            /etc/init.d/rtp2httpd restart >> "\$LOG" 2>&1 || \
+                /etc/init.d/rtp2httpd start >> "\$LOG" 2>&1 || true
+        fi
+
+        /etc/init.d/iptv-refresh-httpd enable >> "\$LOG" 2>&1 || true
+        /etc/init.d/iptv-refresh-httpd restart >> "\$LOG" 2>&1 || \
+            /etc/init.d/iptv-refresh-httpd start >> "\$LOG" 2>&1 || true
     }
 
     tag_myfeed_repo() {
@@ -682,14 +979,16 @@ run_restore_package_actions() {
         normalize_myfeed_repo
     fi
 
+    restore_iptv_refresh_httpd >> "\$LOG" 2>&1 || \
+        echo "WARNING: failed to restore iptv refresh httpd" >> "\$LOG"
+
     repair_luci_theme_config >> "\$LOG" 2>&1 || \
         echo "WARNING: failed to repair luci theme config after package actions" >> "\$LOG"
 
     rm -rf /tmp/luci-indexcache /tmp/luci-modulecache /tmp/luci-*cache 2>/dev/null || true
     /etc/init.d/rpcd restart 2>/dev/null || true
     /etc/init.d/uwsgi restart 2>/dev/null || true
-    /etc/init.d/nginx restart 2>/dev/null || true
-    /etc/init.d/uhttpd restart 2>/dev/null || true
+    [ -x /etc/init.d/nginx ] && /etc/init.d/nginx restart 2>/dev/null || true
 
     if [ "\$INSTALL_DONE" = "1" ]; then
         echo "done; disabling restore-package-actions" >> "\$LOG"
