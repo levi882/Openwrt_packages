@@ -19,6 +19,7 @@ RESTORE_IPTV_REFRESH_PORT="${RESTORE_IPTV_REFRESH_PORT:-9099}"
 RESTORE_IPTV_REFRESH_ALLOW_IPS="${RESTORE_IPTV_REFRESH_ALLOW_IPS:-127.0.0.1}"
 RESTORE_IPTV_NGINX_LOCATIONS="${RESTORE_IPTV_NGINX_LOCATIONS:-/etc/nginx/conf.d/iptv-refresh.locations}"
 RESTORE_IPTV_NGINX_SERVER_CONF="${RESTORE_IPTV_NGINX_SERVER_CONF:-}"
+RESTORE_HA_CONFIG_ROOT="${RESTORE_HA_CONFIG_ROOT:-/mnt/sda1/Configs/HomeAssistant}"
 RESTORE_THEME_PACKAGES=""
 RESTORE_THEME_REPAIR_PACKAGES=""
 DEFAULT_MYFEED_INSTALL_PACKAGES="luci-theme-aurora luci-app-aurora-config luci-i18n-aurora-config-zh-cn bandix luci-app-bandix luci-i18n-bandix-zh-cn easytier luci-app-easytier luci-i18n-easytier-zh-cn lucky luci-app-lucky luci-i18n-lucky-zh-cn nikki luci-app-nikki luci-i18n-nikki-zh-cn rtp2httpd luci-app-rtp2httpd luci-i18n-rtp2httpd-zh-cn smartdns luci-app-smartdns"
@@ -479,6 +480,7 @@ IPTV_REFRESH_PORT="$RESTORE_IPTV_REFRESH_PORT"
 IPTV_REFRESH_ALLOW_IPS="$RESTORE_IPTV_REFRESH_ALLOW_IPS"
 IPTV_NGINX_LOCATIONS="$RESTORE_IPTV_NGINX_LOCATIONS"
 IPTV_NGINX_SERVER_CONF="$RESTORE_IPTV_NGINX_SERVER_CONF"
+HA_CONFIG_ROOT="$RESTORE_HA_CONFIG_ROOT"
 
 run_restore_package_actions() {
     {
@@ -797,6 +799,25 @@ rest_command:
     method: GET
 IPTV_HA_EOF
         chmod 600 "\$IPTV_REPO_ROOT/config/local/home_assistant_rest_command.yaml"
+
+        if [ -d "\$HA_CONFIG_ROOT" ]; then
+            HA_SECRET_FILE="\$HA_CONFIG_ROOT/secrets.yaml"
+            HA_REFRESH_URL="http://10.1.1.1/iptv/refresh?iface=\$IPTV_REFRESH_IFACE"
+            touch "\$HA_SECRET_FILE"
+            if grep -q '^iptv_refresh_url:' "\$HA_SECRET_FILE"; then
+                sed -i "s#^iptv_refresh_url:.*#iptv_refresh_url: \"\$HA_REFRESH_URL\"#" "\$HA_SECRET_FILE"
+            else
+                printf '\niptv_refresh_url: "%s"\n' "\$HA_REFRESH_URL" >> "\$HA_SECRET_FILE"
+            fi
+            chmod 600 "\$HA_SECRET_FILE"
+            echo "updated Home Assistant IPTV secret: \$HA_SECRET_FILE" >> "\$LOG"
+            if [ -f "\$HA_CONFIG_ROOT/configuration.yaml" ] && \
+                ! grep -q 'iptv_refresh' "\$HA_CONFIG_ROOT/configuration.yaml"; then
+                echo "WARNING: HA configuration.yaml does not mention iptv_refresh; rest_command may need to be added manually" >> "\$LOG"
+            fi
+        else
+            echo "HA config root not found, skip HA secret update: \$HA_CONFIG_ROOT" >> "\$LOG"
+        fi
 
         cat > /etc/init.d/iptv-refresh-httpd <<'IPTV_INIT_EOF'
 #!/bin/sh /etc/rc.common
