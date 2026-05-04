@@ -20,15 +20,15 @@
     "version": "0.12.8-r1"
   },
   "easytier": {
-    "archive_sha": "8d15ef6d62a1f393537f96bc09cbb4cd5ad950ef6a6394bfeb978a2fdd269d2f",
-    "i18n_name": "luci-i18n-easytier-zh-cn-26.108.04894~f333f04.apk",
-    "i18n_sha": "7652194e939995ae31d330d874e60aaf9b25dc1d27c5cdb128f6e34bca0709e6",
-    "luci_name": "luci-app-easytier-2.6.0-r2.apk",
-    "luci_sha": "b97134cf583476fb7530cd86a781e9ee76b5a5362edad457adb72645f812f39f",
-    "main_name": "easytier-2.6.1.apk",
-    "main_sha": "f0dec9a5963cc6ea7d06d4ad3ff3e5d4df347eddca3988770975bac7b5ddfa5a",
-    "tag": "v2.6.1",
-    "version": "2.6.1"
+    "archive_sha": "c6c25f1667835a923e629381eec865a1600142a30f94ab0df070b87f1cd0b7ea",
+    "i18n_name": "luci-i18n-easytier-zh-cn-26.117.43909~ca9e2d6.apk",
+    "i18n_sha": "06cd91524dd9b486be3e971b98b74c1d10d351cf9e49358a8ed5be86986038c8",
+    "luci_name": "luci-app-easytier-2.6.2-r1.apk",
+    "luci_sha": "7dd7b216648791a8dee6856165138e8af62ea156c2ef64d3f9fa444e2dba6638",
+    "main_name": "easytier-2.6.2.apk",
+    "main_sha": "d89dde5a57b89282c201d4c065159f41def4dadb1dda6d26d9078f9b990295b4",
+    "tag": "v2.6.2",
+    "version": "2.6.2"
   },
   "fakehttp": {
     "i18n_release": "r1",
