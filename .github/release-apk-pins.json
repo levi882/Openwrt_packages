@@ -10,14 +10,14 @@
     "theme_version": "0.11.0-r20260208"
   },
   "bandix": {
-    "i18n_sha": "26bed75050c5ef7e2dce2143b5d0b22401b4cab71f5dbf04ebcd01542b8299a0",
-    "i18n_version": "26.115.23589.49c1ba8",
-    "luci_sha": "46043282ded37181638767529944ca40b00c783057b54c010c5040e56a9536dc",
-    "luci_tag": "v0.12.7",
-    "luci_version": "0.12.7-r1",
-    "main_sha": "c8e117d995a619fff12f1e833c928ec57fd4c44dcea04ee9837ca5d9d1261de1",
-    "tag": "v0.12.8",
-    "version": "0.12.8-r1"
+    "i18n_sha": "0f316a6b26816a2f2eb9e901d6d10e5aca5c55565830e3317c0671f2b10ce40a",
+    "i18n_version": "26.127.55408.c087ffa",
+    "luci_sha": "2dbc5d91658e0fff22ed9ff4f82d5aaa87f0a290682672971732d7b3e1f792d2",
+    "luci_tag": "v0.12.8",
+    "luci_version": "0.12.8-r1",
+    "main_sha": "9d1b0fe336f922cc2b4ab4f96d91abb8071b0aab253a247b5140b9ec62d3d598",
+    "tag": "v0.12.9",
+    "version": "0.12.9-r1"
   },
   "easytier": {
     "archive_sha": "c6c25f1667835a923e629381eec865a1600142a30f94ab0df070b87f1cd0b7ea",
@@ -60,12 +60,12 @@
     "tag": "v1.26.0"
   },
   "rtp2httpd": {
-    "i18n_sha": "712fe32b6d30b80f0719158f6c7252557c4dd496f0b420522c4701e45982286a",
-    "luci_sha": "1d76e0d6e8c7ff77b6651f353f84a576fd2c35e5dcf1f26ad1aab201adc0ed05",
-    "main_sha": "1c870a54502940cd893be5b10dcf7e17fb27ea924fa38a522e1f0dfbef4d10fd",
+    "i18n_sha": "311cb0c1674ce948128229fc0cc047878c76ab5388a335b57908daf13892af91",
+    "luci_sha": "2dd0cc2af0f4828de8b88e46bc43124263203b1c72733fca9977b1f66e39f3d6",
+    "main_sha": "5e888aa02d2880f5c8f8516b252be258fd8c04e1ee067accb6e4e513b62ef6d3",
     "package_release": "r1",
-    "tag": "v3.11.0",
-    "version": "3.11.0"
+    "tag": "v3.12.1",
+    "version": "3.12.1"
   },
   "smartdns": {
     "luci_sha": "162a653278ca627dbfb313b761aca685f2338ba1c03ab60c72291c881511a923",
