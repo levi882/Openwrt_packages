@@ -15,20 +15,20 @@
     "luci_sha": "2dbc5d91658e0fff22ed9ff4f82d5aaa87f0a290682672971732d7b3e1f792d2",
     "luci_tag": "v0.12.8",
     "luci_version": "0.12.8-r1",
-    "main_sha": "9d1b0fe336f922cc2b4ab4f96d91abb8071b0aab253a247b5140b9ec62d3d598",
+    "main_sha": "d2bf69ab21a4a3e041120a55cab471bd172872b86b73a2478504727853a54819",
     "tag": "v0.12.9",
     "version": "0.12.9-r1"
   },
   "easytier": {
-    "archive_sha": "c6c25f1667835a923e629381eec865a1600142a30f94ab0df070b87f1cd0b7ea",
-    "i18n_name": "luci-i18n-easytier-zh-cn-26.117.43909~ca9e2d6.apk",
-    "i18n_sha": "06cd91524dd9b486be3e971b98b74c1d10d351cf9e49358a8ed5be86986038c8",
-    "luci_name": "luci-app-easytier-2.6.2-r1.apk",
-    "luci_sha": "7dd7b216648791a8dee6856165138e8af62ea156c2ef64d3f9fa444e2dba6638",
-    "main_name": "easytier-2.6.2.apk",
-    "main_sha": "d89dde5a57b89282c201d4c065159f41def4dadb1dda6d26d9078f9b990295b4",
-    "tag": "v2.6.2",
-    "version": "2.6.2"
+    "archive_sha": "1ed886c4edb736e16d4b6064212d7c88dc95d2d898189f236c9ba0ce711deb44",
+    "i18n_name": "luci-i18n-easytier-zh-cn-26.136.03667~39d7eda.apk",
+    "i18n_sha": "b08e482f3e725b34c77ec33ed0cbcb209b2f5d57600619a3f8af6827f49e1cff",
+    "luci_name": "luci-app-easytier-2.6.4-r1.apk",
+    "luci_sha": "8d5fd568a73507b7aa2cee615dc35061f11d155f91f446633aa42905152c7368",
+    "main_name": "easytier-2.6.4.apk",
+    "main_sha": "4c4f5f6939760d37e81bf8453bae272631130f1ceadf4e56ff138ae6ac8c25ef",
+    "tag": "v2.6.4",
+    "version": "2.6.4"
   },
   "fakehttp": {
     "i18n_release": "r1",
@@ -60,17 +60,17 @@
     "tag": "v1.26.0"
   },
   "rtp2httpd": {
-    "i18n_sha": "311cb0c1674ce948128229fc0cc047878c76ab5388a335b57908daf13892af91",
-    "luci_sha": "2dd0cc2af0f4828de8b88e46bc43124263203b1c72733fca9977b1f66e39f3d6",
-    "main_sha": "5e888aa02d2880f5c8f8516b252be258fd8c04e1ee067accb6e4e513b62ef6d3",
+    "i18n_sha": "1764f1e19d5fb1302e74f8b62fe18ee1dbe333102bcc0eb5e234ed98b82c56bd",
+    "luci_sha": "44eba352a457664f90be3ebc399d6eebb99dffcfacf36449a09d3d34bf7f765d",
+    "main_sha": "82950e8574c060ac14935c06df11dce70d7951da135484dcf8408e5347f4a9d6",
     "package_release": "r1",
-    "tag": "v3.12.1",
-    "version": "3.12.1"
+    "tag": "v3.12.2",
+    "version": "3.12.2"
   },
   "smartdns": {
-    "luci_sha": "162a653278ca627dbfb313b761aca685f2338ba1c03ab60c72291c881511a923",
-    "main_sha": "48a92a6290b7a7281b6269d08678eb89a64bc49b0dc4f49e7297e8d6e9dfda25",
-    "tag": "Release47.1",
-    "version": "1.2025.11.09-1443"
+    "luci_sha": "68d47502d322574f77944a0104486dea01baeeb742bc8397d356e7a974e3401a",
+    "main_sha": "9572c9da39cf655933b3396c360a83d2d07ac971347f5053996535c65a7efc73",
+    "tag": "Release48",
+    "version": "1.2026.05.19-2313"
   }
 }
