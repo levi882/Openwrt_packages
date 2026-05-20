@@ -8,7 +8,7 @@ RESTORE_KEEP_RUNTIME_PACKAGES="${RESTORE_KEEP_RUNTIME_PACKAGES-$DEFAULT_KEEP_RUN
 RESTORE_MYFEED_BASE="${RESTORE_MYFEED_BASE:-https://openwrt-packages.pages.dev}"
 RESTORE_MYFEED_REPO="${RESTORE_MYFEED_REPO:-$RESTORE_MYFEED_BASE/openwrt-25.12/x86_64/myfeed/packages.adb}"
 RESTORE_MYFEED_KEY_URL="${RESTORE_MYFEED_KEY_URL:-$RESTORE_MYFEED_BASE/public-key.pem}"
-DEFAULT_INSTALL_PACKAGES="omcproxy luci-app-omcproxy luci-i18n-omcproxy-zh-cn python3 python3-requests tcpdump curl bash"
+DEFAULT_INSTALL_PACKAGES="omcproxy luci-app-omcproxy luci-i18n-omcproxy-zh-cn python3 python3-requests tcpdump curl bash coreutils-nohup"
 RESTORE_INSTALL_PACKAGES="${RESTORE_INSTALL_PACKAGES-$DEFAULT_INSTALL_PACKAGES}"
 RESTORE_IPTV_ENABLE="${RESTORE_IPTV_ENABLE:-1}"
 RESTORE_IPTV_REPO_ROOT="${RESTORE_IPTV_REPO_ROOT:-/mnt/sda1/iptv}"
@@ -609,14 +609,16 @@ run_restore_package_actions() {
         restore_nginx_location_file() {
             if [ "\$NGINX_LOC_HAD" = "1" ]; then
                 cp "\$NGINX_LOC_BACKUP" "\$NGINX_LOC"
-            else
-                rm -f "\$NGINX_LOC"
             fi
         }
 
         test_nginx_config() {
             command -v nginx >/dev/null 2>&1 || return 0
-            nginx -t >> "\$LOG" 2>&1
+            if [ -f /etc/nginx/uci.conf ]; then
+                nginx -t -c /etc/nginx/uci.conf >> "\$LOG" 2>&1
+            else
+                nginx -t >> "\$LOG" 2>&1
+            fi
         }
 
         cat > "\$NGINX_LOC" <<'NGINX_IPTV_EOF'
