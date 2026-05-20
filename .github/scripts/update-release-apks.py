@@ -133,7 +133,7 @@ def get_easytier():
             name = Path(info.filename).name
             apks[name] = sha256(archive.read(info))
 
-    main_name, main_sha = pick_apk(apks, r"easytier-.+\.apk", "EasyTier daemon")
+    main_name, main_sha = pick_apk(apks, r"easytier-(?!noweb).+\.apk", "EasyTier daemon")
     luci_name, luci_sha = pick_apk(apks, r"luci-app-easytier-.+\.apk", "EasyTier LuCI app")
     i18n_name, i18n_sha = pick_apk(
         apks,
