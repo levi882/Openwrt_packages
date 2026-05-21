@@ -601,14 +601,29 @@ run_restore_package_actions() {
 
         NGINX_LOC_BACKUP="/tmp/iptv-nginx-locations.\$\$"
         NGINX_LOC_HAD=0
+        LEGACY_NGINX_LOC=/etc/nginx/conf.d/iptv_refresh.locations
+        LEGACY_NGINX_LOC_BACKUP=""
         if [ -f "\$NGINX_LOC" ]; then
             cp "\$NGINX_LOC" "\$NGINX_LOC_BACKUP"
             NGINX_LOC_HAD=1
+        fi
+        if [ "\$LEGACY_NGINX_LOC" != "\$NGINX_LOC" ] && \
+            [ -f "\$LEGACY_NGINX_LOC" ] && \
+            grep -Eqs 'location[[:space:]]*=[[:space:]]*/iptv/(refresh|healthz)' "\$LEGACY_NGINX_LOC"; then
+            LEGACY_NGINX_LOC_BACKUP="/tmp/iptv-nginx-legacy-locations.\$\$"
+            cp "\$LEGACY_NGINX_LOC" "\$LEGACY_NGINX_LOC_BACKUP"
+            rm -f "\$LEGACY_NGINX_LOC"
+            echo "temporarily removed legacy IPTV nginx locations: \$LEGACY_NGINX_LOC" >> "\$LOG"
         fi
 
         restore_nginx_location_file() {
             if [ "\$NGINX_LOC_HAD" = "1" ]; then
                 cp "\$NGINX_LOC_BACKUP" "\$NGINX_LOC"
+            else
+                rm -f "\$NGINX_LOC"
+            fi
+            if [ -n "\$LEGACY_NGINX_LOC_BACKUP" ] && [ -f "\$LEGACY_NGINX_LOC_BACKUP" ]; then
+                cp "\$LEGACY_NGINX_LOC_BACKUP" "\$LEGACY_NGINX_LOC"
             fi
         }
 
@@ -652,11 +667,13 @@ NGINX_IPTV_EOF
                 echo "WARNING: nginx test failed after writing \$NGINX_LOC; rolling back location file" >> "\$LOG"
                 restore_nginx_location_file
                 test_nginx_config >/dev/null 2>&1 || true
-                rm -f "\$NGINX_LOC_BACKUP"
+                rm -f "\$NGINX_LOC_BACKUP" "\$LEGACY_NGINX_LOC_BACKUP"
                 return 0
             fi
             echo "nginx already includes locations files; wrote \$NGINX_LOC" >> "\$LOG"
-            rm -f "\$NGINX_LOC_BACKUP"
+            [ -n "\$LEGACY_NGINX_LOC_BACKUP" ] && \
+                echo "removed legacy IPTV nginx locations: \$LEGACY_NGINX_LOC" >> "\$LOG"
+            rm -f "\$NGINX_LOC_BACKUP" "\$LEGACY_NGINX_LOC_BACKUP"
             return 0
         fi
 
@@ -690,11 +707,13 @@ NGINX_IPTV_EOF
                 echo "WARNING: nginx test failed after writing included \$NGINX_LOC; rolling back location file" >> "\$LOG"
                 restore_nginx_location_file
                 test_nginx_config >/dev/null 2>&1 || true
-                rm -f "\$NGINX_LOC_BACKUP"
+                rm -f "\$NGINX_LOC_BACKUP" "\$LEGACY_NGINX_LOC_BACKUP"
                 return 0
             fi
             echo "nginx server already includes \$NGINX_LOC" >> "\$LOG"
-            rm -f "\$NGINX_LOC_BACKUP"
+            [ -n "\$LEGACY_NGINX_LOC_BACKUP" ] && \
+                echo "removed legacy IPTV nginx locations: \$LEGACY_NGINX_LOC" >> "\$LOG"
+            rm -f "\$NGINX_LOC_BACKUP" "\$LEGACY_NGINX_LOC_BACKUP"
             return 0
         }
 
@@ -737,7 +756,7 @@ NGINX_IPTV_EOF
             echo "WARNING: failed to insert nginx include into \$NGINX_SERVER_CONF" >> "\$LOG"
             cp "\$NGINX_SERVER_BACKUP" "\$NGINX_SERVER_CONF"
             restore_nginx_location_file
-            rm -f "\$TMP" "\$NGINX_SERVER_BACKUP" "\$NGINX_LOC_BACKUP"
+            rm -f "\$TMP" "\$NGINX_SERVER_BACKUP" "\$NGINX_LOC_BACKUP" "\$LEGACY_NGINX_LOC_BACKUP"
             return 0
         }
 
@@ -746,11 +765,13 @@ NGINX_IPTV_EOF
             cp "\$NGINX_SERVER_BACKUP" "\$NGINX_SERVER_CONF"
             restore_nginx_location_file
             test_nginx_config >/dev/null 2>&1 || true
-            rm -f "\$NGINX_SERVER_BACKUP" "\$NGINX_LOC_BACKUP"
+            rm -f "\$NGINX_SERVER_BACKUP" "\$NGINX_LOC_BACKUP" "\$LEGACY_NGINX_LOC_BACKUP"
             return 0
         fi
 
-        rm -f "\$NGINX_SERVER_BACKUP" "\$NGINX_LOC_BACKUP"
+        [ -n "\$LEGACY_NGINX_LOC_BACKUP" ] && \
+            echo "removed legacy IPTV nginx locations: \$LEGACY_NGINX_LOC" >> "\$LOG"
+        rm -f "\$NGINX_SERVER_BACKUP" "\$NGINX_LOC_BACKUP" "\$LEGACY_NGINX_LOC_BACKUP"
 
         echo "added iptv nginx include to \$NGINX_SERVER_CONF: \$NGINX_LOC" >> "\$LOG"
     }
