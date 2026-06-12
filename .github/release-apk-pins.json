@@ -45,19 +45,21 @@
     "i18n_version": "0",
     "luci_sha": "42822bf7457fb541a259c0ace945a3f0c19e701113c01d07f1d9afa3cb56a598",
     "luci_version": "2.2.2-r1",
-    "main_sha": "dfce70032fc72cbd3025d0a678e8974c403ee3f972e5f8d87b0b2e96e634147d",
-    "tag": "v3.0.0_beta5",
-    "version": "3.0.0_beta5-r1"
+    "main_sha": "180ff9302886ad519ac11708dc7f3d6b6348155932dcbc12c72fc36c3d4b4a66",
+    "tag": "v3.0.0_beta6",
+    "version": "3.0.0_beta6-r1"
   },
   "nikki": {
     "apks": {
-      "luci-app-nikki-1.26.0-r1.apk": "1da947b8c911149d64f9dfd137d73363d7b692e026be6cc45b327f354e4c9675",
-      "luci-i18n-nikki-zh-cn-26.100.26541~bc29251.apk": "1d9c847bdc819f42d6697a1b5c1c2b9241da6f844f7e9197f41a3d37b382c182",
-      "nikki-2026.04.08-r1.apk": "bc1530588290b861f50ed03bd3f476504566549cf0a4046ac4955439d3c680b4"
+      "luci-app-nikki-1.26.1-r1.apk": "e40bcd726d66a784b736d34df4c41993d865168322328c48856bfa77297b8bbd",
+      "luci-i18n-nikki-zh-cn-26.161.56550~95d41dd.apk": "98f7e75db41c108298b9d5623b6c1fe70a41440a57fef8a59dbe920f5049b4b8",
+      "mihomo-alpha-2026.06.10.apk": "bb4f8ba81f2c17424fa4bd5bfe8f49eca081c9651371b79f9befb2977ba3a424",
+      "mihomo-meta-1.19.27.apk": "4548f875ea0f9d386501dc90721166a039aa5a5c2dcb10cf3d3dbd0f327f29ea",
+      "nikki-2026.04.08-r1.apk": "e56cc70d5631cb5990530a450fa434543f3e9a0a5d76844e4108a8ae33b10077"
     },
-    "archive_sha": "7c1b21c4eea6fa29dca580ede2c7777f7cf6ac6c89ac90b1ed0edc3af2e9a53c",
+    "archive_sha": "5903e6ac8d4f6d955d038e151d759990e6ae606240e46a3832ec56a47d6d0dfe",
     "openwrt_release": "25.12",
-    "tag": "v1.26.0"
+    "tag": "v1.26.1"
   },
   "rtp2httpd": {
     "i18n_sha": "1764f1e19d5fb1302e74f8b62fe18ee1dbe333102bcc0eb5e234ed98b82c56bd",
@@ -68,9 +70,9 @@
     "version": "3.12.2"
   },
   "smartdns": {
-    "luci_sha": "68d47502d322574f77944a0104486dea01baeeb742bc8397d356e7a974e3401a",
-    "main_sha": "9572c9da39cf655933b3396c360a83d2d07ac971347f5053996535c65a7efc73",
-    "tag": "Release48",
-    "version": "1.2026.05.19-2313"
+    "luci_sha": "a84b990498fdf3b9f0951286a136c7134d881fe0b5c99c272c05c722efc229a0",
+    "main_sha": "a470f7accaf9b0a7448c5b214332dbf045eaad77d45c5a6ad3ca6fd4258fbee1",
+    "tag": "Release48.1",
+    "version": "1.2026.06.07-1153"
   }
 }
