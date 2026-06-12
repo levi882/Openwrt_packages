@@ -793,11 +793,13 @@ NGINX_IPTV_EOF
         echo "restore iptv refresh httpd from: \$IPTV_REPO_ROOT" >> "\$LOG"
         chmod +x "\$IPTV_REPO_ROOT/scripts/launch_iptv_refresh.sh" 2>/dev/null || true
         chmod +x "\$IPTV_REPO_ROOT/scripts/refresh_iptv.sh" 2>/dev/null || true
+        chmod +x "\$IPTV_REPO_ROOT/scripts/iptv_refresh_httpd.py" 2>/dev/null || true
         chmod +x "\$IPTV_REPO_ROOT/scripts/"*.sh 2>/dev/null || true
         mkdir -p "\$IPTV_REPO_ROOT/output/log" "\$IPTV_REPO_ROOT/scripts/cache" "\$IPTV_REPO_ROOT/config/local" /www/iptv_epg
         ln -sf "\$IPTV_REPO_ROOT/scripts/cache/e1.xml.gz" /www/iptv_epg/e1.xml.gz
 
-        cat > /etc/iptv-refresh-httpd.conf <<IPTV_CONF_EOF
+        mkdir -p /etc/config
+        cat > /etc/config/iptv-refresh-httpd <<IPTV_CONF_EOF
 REPO_ROOT='\$IPTV_REPO_ROOT'
 TOKEN='\$IPTV_REFRESH_TOKEN'
 LISTEN_HOST='\$IPTV_REFRESH_HOST'
@@ -805,7 +807,8 @@ LISTEN_PORT='\$IPTV_REFRESH_PORT'
 DEFAULT_IFACE='\$IPTV_REFRESH_IFACE'
 ALLOW_IPS='\$IPTV_REFRESH_ALLOW_IPS'
 IPTV_CONF_EOF
-        chmod 600 /etc/iptv-refresh-httpd.conf
+        chmod 600 /etc/config/iptv-refresh-httpd
+        rm -f /etc/iptv-refresh-httpd.conf
 
         cat > "\$IPTV_REPO_ROOT/config/local/iptv_refresh.env" <<IPTV_REFRESH_ENV_EOF
 IPTV_REFRESH_TOKEN='\$IPTV_REFRESH_TOKEN'
@@ -848,7 +851,8 @@ IPTV_HA_EOF
 START=99
 USE_PROCD=1
 
-CONFIG_FILE="/etc/iptv-refresh-httpd.conf"
+CONFIG_FILE="/etc/config/iptv-refresh-httpd"
+LEGACY_CONFIG_FILE="/etc/iptv-refresh-httpd.conf"
 REPO_ROOT="/mnt/sda1/iptv"
 TOKEN="change-me"
 LISTEN_HOST="127.0.0.1"
@@ -857,6 +861,7 @@ DEFAULT_IFACE="eth3.3927"
 ALLOW_IPS="127.0.0.1"
 
 [ -f "\$CONFIG_FILE" ] && . "\$CONFIG_FILE"
+[ -f "\$LEGACY_CONFIG_FILE" ] && . "\$LEGACY_CONFIG_FILE"
 
 start_service() {
     [ -f "\$REPO_ROOT/scripts/iptv_refresh_httpd.py" ] || return 1
