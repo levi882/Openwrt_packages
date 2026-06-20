@@ -1,13 +1,13 @@
 {
   "aurora": {
-    "config_sha": "189e95be79406ae86f57998d0f36322fc59c0a773aefac2ee5c44a64edc71efe",
-    "config_tag": "v0.4.0",
-    "config_version": "0.4.0-r20260531",
-    "i18n_sha": "6decffcb5be43a9e372c7fc3f2a741a16b49829f8aa88d373c948083fe8d7b33",
-    "i18n_version": "26.151.19939.84e4628",
-    "theme_sha": "0d138fb5484d054022890f728d1855426d78767aedad4b028c2c41d96a837d1f",
-    "theme_tag": "v0.12.0",
-    "theme_version": "0.12.0-r20260531"
+    "config_sha": "a0ceb67e6827bb1d7cd88077c199c5f4ed03f1f4eafce192958e36dec6a6c70c",
+    "config_tag": "v1.0.0",
+    "config_version": "1.0.0-r20260619",
+    "i18n_sha": "7bd813c86bd115df94d90a7dabcbc071ef4ee463e33cfb25a5bffb42491b7170",
+    "i18n_version": "26.169.61452.cc474f9",
+    "theme_sha": "0537ddda8e83b4ab98ac1e8891cd5882003c1c265eea124d8a4fc663a4962c8b",
+    "theme_tag": "v1.0.0",
+    "theme_version": "1.0.0-r20260619"
   },
   "bandix": {
     "i18n_sha": "0f316a6b26816a2f2eb9e901d6d10e5aca5c55565830e3317c0671f2b10ce40a",
@@ -62,12 +62,12 @@
     "tag": "v1.26.1"
   },
   "rtp2httpd": {
-    "i18n_sha": "984f626aa37c5d9cb82050b6e312b2d07329000b8ffa7cbd563d651ab9c33166",
-    "luci_sha": "df0cde0dd1ca82a4706a74883e754290668ac8b44a1cfda4dd45230a50984ead",
-    "main_sha": "f76e77c0fc62d98705f4a029dd6c6cbc3f0e38eb55ef19d192ef351e9ea6d3f8",
+    "i18n_sha": "1fa128bddb15fc8433c2067da8c8606acd269de510970e451c179847764bdc16",
+    "luci_sha": "0768437823c4e3cff699981a7520cdec184033fc29a7b5141059366e9fe9fe23",
+    "main_sha": "e707a2c4185fea7db81f93ec287b68f88437a4815affa573b30d67c9b6c02c39",
     "package_release": "r1",
-    "tag": "v3.13.2",
-    "version": "3.13.2"
+    "tag": "v3.13.5",
+    "version": "3.13.5"
   },
   "smartdns": {
     "luci_sha": "a84b990498fdf3b9f0951286a136c7134d881fe0b5c99c272c05c722efc229a0",
