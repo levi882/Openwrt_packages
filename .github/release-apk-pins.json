@@ -62,12 +62,12 @@
     "tag": "v1.26.1"
   },
   "rtp2httpd": {
-    "i18n_sha": "1fa128bddb15fc8433c2067da8c8606acd269de510970e451c179847764bdc16",
-    "luci_sha": "0768437823c4e3cff699981a7520cdec184033fc29a7b5141059366e9fe9fe23",
-    "main_sha": "e707a2c4185fea7db81f93ec287b68f88437a4815affa573b30d67c9b6c02c39",
+    "i18n_sha": "efaeca0a55381bb6311680ab96902e234288e5a3bbae90807f8527ac3c1cac53",
+    "luci_sha": "71c8be7b5ab181fbbecd24a12a0463e4e36ffde833aad9168271d113c204aec6",
+    "main_sha": "833009324a1c86e4f3644bb8e827adbe6dc601211a4f5d7cf33e9a92eab26961",
     "package_release": "r1",
-    "tag": "v3.13.5",
-    "version": "3.13.5"
+    "tag": "v3.14.2",
+    "version": "3.14.2"
   },
   "smartdns": {
     "luci_sha": "a84b990498fdf3b9f0951286a136c7134d881fe0b5c99c272c05c722efc229a0",
