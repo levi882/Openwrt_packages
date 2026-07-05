@@ -62,17 +62,17 @@
     "tag": "v1.26.1"
   },
   "rtp2httpd": {
-    "i18n_sha": "efaeca0a55381bb6311680ab96902e234288e5a3bbae90807f8527ac3c1cac53",
-    "luci_sha": "71c8be7b5ab181fbbecd24a12a0463e4e36ffde833aad9168271d113c204aec6",
-    "main_sha": "833009324a1c86e4f3644bb8e827adbe6dc601211a4f5d7cf33e9a92eab26961",
+    "i18n_sha": "af3ba86ad8c323c49af6d1754aa39bdec36fd649bd07957358fcf7668f7789b1",
+    "luci_sha": "62f452b36254ca9e768ce3820c7814bdce43b592fdfef682ad44ab74a1837e34",
+    "main_sha": "6ba33e2e8316982d81441882addb87391d0a45935c16e6ecb1a90f24c11ce67e",
     "package_release": "r1",
-    "tag": "v3.14.2",
-    "version": "3.14.2"
+    "tag": "v3.14.3",
+    "version": "3.14.3"
   },
   "smartdns": {
-    "luci_sha": "a84b990498fdf3b9f0951286a136c7134d881fe0b5c99c272c05c722efc229a0",
-    "main_sha": "a470f7accaf9b0a7448c5b214332dbf045eaad77d45c5a6ad3ca6fd4258fbee1",
-    "tag": "Release48.1",
-    "version": "1.2026.06.07-1153"
+    "luci_sha": "33209bd0d64be5371b97d9d3c5e775fcb5172983d0f0e452e886142c753bf699",
+    "main_sha": "f467558dbc09020a6ecdbed90001daedf43c50819a4264da9eb5a4aa3372d0b3",
+    "tag": "Release48.2",
+    "version": "1.2026.06.28-1614"
   }
 }
