@@ -35,32 +35,11 @@ jobs:
       - name: checkout
         uses: actions/checkout@v6
 
-      - name: create feed directory
-        run: mkdir -p "bin/packages/${OPENWRT_ARCH}/${FEED_NAME}"
-
-      - name: add Aurora release apks
-        run: bash .github/scripts/download-aurora-apks.sh "bin/packages/${OPENWRT_ARCH}/${FEED_NAME}"
-
-      - name: add Lucky release apks
-        run: bash .github/scripts/download-lucky-apks.sh "bin/packages/${OPENWRT_ARCH}/${FEED_NAME}"
-
-      - name: add EasyTier release apks
-        run: bash .github/scripts/download-easytier-apks.sh "bin/packages/${OPENWRT_ARCH}/${FEED_NAME}"
-
-      - name: add rtp2httpd release apks
-        run: bash .github/scripts/download-rtp2httpd-apks.sh "bin/packages/${OPENWRT_ARCH}/${FEED_NAME}"
-
-      - name: add FakeHTTP release apks
-        run: bash .github/scripts/download-fakehttp-apks.sh "bin/packages/${OPENWRT_ARCH}/${FEED_NAME}"
-
-      - name: add SmartDNS release apks
-        run: bash .github/scripts/download-smartdns-apks.sh "bin/packages/${OPENWRT_ARCH}/${FEED_NAME}"
-
-      - name: add Bandix release apks
-        run: bash .github/scripts/download-bandix-apks.sh "bin/packages/${OPENWRT_ARCH}/${FEED_NAME}"
-
-      - name: add Nikki release apks
-        run: bash .github/scripts/download-nikki-apks.sh "bin/packages/${OPENWRT_ARCH}/${FEED_NAME}"
+      - name: download release apks from manifest
+        run: |
+          python3 .github/scripts/download-release-apks.py \
+            .github/release-apks.json \
+            "bin/packages/${OPENWRT_ARCH}/${FEED_NAME}"
 
       - name: cache OpenWrt SDK
         uses: actions/cache@v4

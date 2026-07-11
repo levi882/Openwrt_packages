@@ -1,0 +1,288 @@
+{
+  "schema_version": 1,
+  "packages": [
+    {
+      "id": "aurora",
+      "releases": [
+        {
+          "repository": "eamonxg/luci-theme-aurora",
+          "tag": "v1.0.0"
+        },
+        {
+          "repository": "eamonxg/luci-app-aurora-config",
+          "tag": "v1.0.0"
+        }
+      ],
+      "artifacts": [
+        {
+          "type": "file",
+          "url": "https://github.com/eamonxg/luci-theme-aurora/releases/download/v1.0.0/luci-theme-aurora-1.0.0-r20260619.apk",
+          "sha256": "0537ddda8e83b4ab98ac1e8891cd5882003c1c265eea124d8a4fc663a4962c8b",
+          "output": "luci-theme-aurora-1.0.0-r20260619.apk"
+        },
+        {
+          "type": "file",
+          "url": "https://github.com/eamonxg/luci-app-aurora-config/releases/download/v1.0.0/luci-app-aurora-config-1.0.0-r20260619.apk",
+          "sha256": "a0ceb67e6827bb1d7cd88077c199c5f4ed03f1f4eafce192958e36dec6a6c70c",
+          "output": "luci-app-aurora-config-1.0.0-r20260619.apk"
+        },
+        {
+          "type": "file",
+          "url": "https://github.com/eamonxg/luci-app-aurora-config/releases/download/v1.0.0/luci-i18n-aurora-config-zh-cn-26.169.61452.cc474f9.apk",
+          "sha256": "7bd813c86bd115df94d90a7dabcbc071ef4ee463e33cfb25a5bffb42491b7170",
+          "output": "luci-i18n-aurora-config-zh-cn-26.169.61452~cc474f9.apk"
+        }
+      ]
+    },
+    {
+      "id": "bandix",
+      "releases": [
+        {
+          "repository": "timsaya/openwrt-bandix",
+          "tag": "v0.12.9"
+        },
+        {
+          "repository": "timsaya/luci-app-bandix",
+          "tag": "v0.12.8"
+        }
+      ],
+      "artifacts": [
+        {
+          "type": "file",
+          "url": "https://github.com/timsaya/openwrt-bandix/releases/download/v0.12.9/bandix-0.12.9-r1_x86_64.apk",
+          "sha256": "d2bf69ab21a4a3e041120a55cab471bd172872b86b73a2478504727853a54819",
+          "output": "bandix-0.12.9-r1.apk"
+        },
+        {
+          "type": "file",
+          "url": "https://github.com/timsaya/luci-app-bandix/releases/download/v0.12.8/luci-app-bandix-0.12.8-r1_all.apk",
+          "sha256": "2dbc5d91658e0fff22ed9ff4f82d5aaa87f0a290682672971732d7b3e1f792d2",
+          "output": "luci-app-bandix-0.12.8-r1.apk"
+        },
+        {
+          "type": "file",
+          "url": "https://github.com/timsaya/luci-app-bandix/releases/download/v0.12.8/luci-i18n-bandix-zh-cn-26.127.55408.c087ffa_all.apk",
+          "sha256": "0f316a6b26816a2f2eb9e901d6d10e5aca5c55565830e3317c0671f2b10ce40a",
+          "output": "luci-i18n-bandix-zh-cn-26.127.55408~c087ffa.apk"
+        }
+      ]
+    },
+    {
+      "id": "easytier",
+      "releases": [
+        {
+          "repository": "EasyTier/luci-app-easytier",
+          "tag": "v2.6.4"
+        }
+      ],
+      "artifacts": [
+        {
+          "type": "archive",
+          "format": "zip",
+          "url": "https://github.com/EasyTier/luci-app-easytier/releases/download/v2.6.4/EasyTier-v2.6.4-x86_64-SNAPSHOT.zip",
+          "sha256": "1ed886c4edb736e16d4b6064212d7c88dc95d2d898189f236c9ba0ce711deb44",
+          "files": [
+            {
+              "source": "easytier-2.6.4.apk",
+              "sha256": "4c4f5f6939760d37e81bf8453bae272631130f1ceadf4e56ff138ae6ac8c25ef",
+              "output": "easytier-2.6.4.apk"
+            },
+            {
+              "source": "luci-app-easytier-2.6.4-r1.apk",
+              "sha256": "8d5fd568a73507b7aa2cee615dc35061f11d155f91f446633aa42905152c7368",
+              "output": "luci-app-easytier-2.6.4-r1.apk"
+            },
+            {
+              "source": "luci-i18n-easytier-zh-cn-26.136.03667~39d7eda.apk",
+              "sha256": "b08e482f3e725b34c77ec33ed0cbcb209b2f5d57600619a3f8af6827f49e1cff",
+              "output": "luci-i18n-easytier-zh-cn-26.136.03667~39d7eda.apk"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "fakehttp",
+      "releases": [
+        {
+          "repository": "levi882/FakeHTTP",
+          "tag": "v0.9.18"
+        }
+      ],
+      "metadata": {
+        "openwrt_release": "25.12.2"
+      },
+      "artifacts": [
+        {
+          "type": "file",
+          "url": "https://github.com/levi882/FakeHTTP/releases/download/v0.9.18/fakehttp-openwrt-25.12.2-x86_64-fakehttp-0.9.18-r2.apk",
+          "sha256": "7b8fc9647944f2690084258539708cf370d34e627117250f402d190d528af58e",
+          "output": "fakehttp-0.9.18-r2.apk"
+        },
+        {
+          "type": "file",
+          "url": "https://github.com/levi882/FakeHTTP/releases/download/v0.9.18/fakehttp-openwrt-25.12.2-x86_64-luci-app-fakehttp-0.9.18-r2.apk",
+          "sha256": "eef39ee5c34709b6386cc8a326ec01017f1e79664d035eb80a4e1bbf05e9ab8f",
+          "output": "luci-app-fakehttp-0.9.18-r2.apk"
+        },
+        {
+          "type": "file",
+          "url": "https://github.com/levi882/FakeHTTP/releases/download/v0.9.18/fakehttp-openwrt-25.12.2-x86_64-luci-i18n-fakehttp-zh-cn-0.9.18-r1.apk",
+          "sha256": "99c5f2ab3ec264169b0e756e0290c7637528dbebbc5773ddb914f5f2ec105439",
+          "output": "luci-i18n-fakehttp-zh-cn-0.9.18-r1.apk"
+        }
+      ]
+    },
+    {
+      "id": "lucky",
+      "releases": [
+        {
+          "repository": "levi882/luci-app-lucky",
+          "tag": "v3.0.0_beta6"
+        }
+      ],
+      "artifacts": [
+        {
+          "type": "file",
+          "url": "https://github.com/levi882/luci-app-lucky/releases/download/v3.0.0_beta6/lucky-3.0.0_beta6-r1_x86_64.apk",
+          "sha256": "180ff9302886ad519ac11708dc7f3d6b6348155932dcbc12c72fc36c3d4b4a66",
+          "output": "lucky-3.0.0_beta6-r1.apk"
+        },
+        {
+          "type": "file",
+          "url": "https://github.com/levi882/luci-app-lucky/releases/download/v3.0.0_beta6/luci-app-lucky-2.2.2-r1_x86_64.apk",
+          "sha256": "42822bf7457fb541a259c0ace945a3f0c19e701113c01d07f1d9afa3cb56a598",
+          "output": "luci-app-lucky-2.2.2-r1.apk"
+        },
+        {
+          "type": "file",
+          "url": "https://github.com/levi882/luci-app-lucky/releases/download/v3.0.0_beta6/luci-i18n-lucky-zh-cn-0_x86_64.apk",
+          "sha256": "10e4e86ca9bd5fa3ade1f929b38596a2481148690be9e7615948593bb77bd93c",
+          "output": "luci-i18n-lucky-zh-cn-0.apk"
+        }
+      ]
+    },
+    {
+      "id": "nikki",
+      "releases": [
+        {
+          "repository": "morytyann/OpenWrt-nikki",
+          "tag": "v1.26.1"
+        }
+      ],
+      "metadata": {
+        "openwrt_release": "25.12"
+      },
+      "artifacts": [
+        {
+          "type": "archive",
+          "format": "tar.gz",
+          "url": "https://github.com/morytyann/OpenWrt-nikki/releases/download/v1.26.1/nikki_x86_64-openwrt-25.12.tar.gz",
+          "sha256": "5903e6ac8d4f6d955d038e151d759990e6ae606240e46a3832ec56a47d6d0dfe",
+          "files": [
+            {
+              "source": "luci-app-nikki-1.26.1-r1.apk",
+              "sha256": "e40bcd726d66a784b736d34df4c41993d865168322328c48856bfa77297b8bbd",
+              "output": "luci-app-nikki-1.26.1-r1.apk"
+            },
+            {
+              "source": "luci-i18n-nikki-zh-cn-26.161.56550~95d41dd.apk",
+              "sha256": "98f7e75db41c108298b9d5623b6c1fe70a41440a57fef8a59dbe920f5049b4b8",
+              "output": "luci-i18n-nikki-zh-cn-26.161.56550~95d41dd.apk"
+            },
+            {
+              "source": "mihomo-alpha-2026.06.10.apk",
+              "sha256": "bb4f8ba81f2c17424fa4bd5bfe8f49eca081c9651371b79f9befb2977ba3a424",
+              "output": "mihomo-alpha-2026.06.10.apk"
+            },
+            {
+              "source": "mihomo-meta-1.19.27.apk",
+              "sha256": "4548f875ea0f9d386501dc90721166a039aa5a5c2dcb10cf3d3dbd0f327f29ea",
+              "output": "mihomo-meta-1.19.27.apk"
+            },
+            {
+              "source": "nikki-2026.04.08-r1.apk",
+              "sha256": "e56cc70d5631cb5990530a450fa434543f3e9a0a5d76844e4108a8ae33b10077",
+              "output": "nikki-2026.04.08-r1.apk"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "rtp2httpd",
+      "releases": [
+        {
+          "repository": "stackia/rtp2httpd",
+          "tag": "v3.14.3"
+        }
+      ],
+      "artifacts": [
+        {
+          "type": "file",
+          "url": "https://github.com/stackia/rtp2httpd/releases/download/v3.14.3/rtp2httpd-3.14.3-r1_x86_64.apk",
+          "sha256": "6ba33e2e8316982d81441882addb87391d0a45935c16e6ecb1a90f24c11ce67e",
+          "output": "rtp2httpd-3.14.3-r1.apk"
+        },
+        {
+          "type": "file",
+          "url": "https://github.com/stackia/rtp2httpd/releases/download/v3.14.3/luci-app-rtp2httpd-3.14.3-r1.apk",
+          "sha256": "62f452b36254ca9e768ce3820c7814bdce43b592fdfef682ad44ab74a1837e34",
+          "output": "luci-app-rtp2httpd-3.14.3-r1.apk"
+        },
+        {
+          "type": "file",
+          "url": "https://github.com/stackia/rtp2httpd/releases/download/v3.14.3/luci-i18n-rtp2httpd-zh-cn-3.14.3.apk",
+          "sha256": "af3ba86ad8c323c49af6d1754aa39bdec36fd649bd07957358fcf7668f7789b1",
+          "output": "luci-i18n-rtp2httpd-zh-cn-3.14.3.apk"
+        }
+      ]
+    },
+    {
+      "id": "smartdns",
+      "releases": [
+        {
+          "repository": "pymumu/smartdns",
+          "tag": "Release48.2"
+        }
+      ],
+      "artifacts": [
+        {
+          "type": "file",
+          "url": "https://github.com/pymumu/smartdns/releases/download/Release48.2/smartdns.1.2026.06.28-1614.x86_64-openwrt-all.apk",
+          "sha256": "f467558dbc09020a6ecdbed90001daedf43c50819a4264da9eb5a4aa3372d0b3",
+          "output": "smartdns-1.2026.06.28-r1614.apk"
+        },
+        {
+          "type": "file",
+          "url": "https://github.com/pymumu/smartdns/releases/download/Release48.2/luci-app-smartdns.1.2026.06.28-1614.all-luci-all.apk",
+          "sha256": "33209bd0d64be5371b97d9d3c5e775fcb5172983d0f0e452e886142c753bf699",
+          "output": "luci-app-smartdns-1.2026.06.28-r1614.apk"
+        }
+      ]
+    },
+    {
+      "id": "temp-status",
+      "releases": [
+        {
+          "repository": "levi882/luci-app-temp-status",
+          "tag": "v0.8.1"
+        }
+      ],
+      "artifacts": [
+        {
+          "type": "file",
+          "url": "https://github.com/levi882/luci-app-temp-status/releases/download/v0.8.1/luci-app-temp-status-0.8.1-r1.apk",
+          "sha256": "cafe179b0501cecb7791b66678b4f447d29599e9b65dcc38d6b556158160a5d3",
+          "output": "luci-app-temp-status-0.8.1-r1.apk"
+        },
+        {
+          "type": "file",
+          "url": "https://github.com/levi882/luci-app-temp-status/releases/download/v0.8.1/luci-i18n-temp-status-zh-cn-0.apk",
+          "sha256": "e03aa9f2f79dadd2ac29c813a8bea0dc0e6e0983124423d976124407b9495487",
+          "output": "luci-i18n-temp-status-zh-cn-0.apk"
+        }
+      ]
+    }
+  ]
+}

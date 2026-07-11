@@ -9,8 +9,8 @@ https://openwrt-packages.pages.dev/openwrt-25.12/x86_64/myfeed/packages.adb
 ```
 
 It currently carries personal-use packages such as Aurora theme, Bandix,
-EasyTier, Lucky, Nikki, rtp2httpd, and SmartDNS plus their LuCI packages where
-available.
+EasyTier, Lucky, Nikki, rtp2httpd, SmartDNS, and temp-status plus their LuCI
+packages where available.
 
 ## Build
 
@@ -26,10 +26,19 @@ Add these GitHub secrets:
 CLOUDFLARE_ACCOUNT_ID
 CLOUDFLARE_API_TOKEN
 PRIVATE_KEY
+AUTOMATION_TOKEN
 ```
 
+`AUTOMATION_TOKEN` is a fine-grained GitHub token limited to this repository
+with read/write access to Contents and Pull requests. It allows the scheduled
+release updater to open and automatically merge a verified PR while still
+triggering the normal `build-feed` workflow after the merge.
+
 Push to `main`, or run the `build-feed` workflow manually. The
-`update-release-apks` workflow can be run manually to refresh upstream APK pins.
+`update-release-apks` workflow can be run manually to refresh the centralized
+`.github/release-apks.json` manifest. The manifest contains the resolved release
+URLs, output filenames, archive members, and SHA256 checksums consumed by the
+generic downloader.
 
 ## Router Feed Setup
 
