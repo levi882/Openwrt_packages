@@ -6,31 +6,31 @@
       "releases": [
         {
           "repository": "eamonxg/luci-theme-aurora",
-          "tag": "v1.0.0"
+          "tag": "v1.1.0"
         },
         {
           "repository": "eamonxg/luci-app-aurora-config",
-          "tag": "v1.0.0"
+          "tag": "v1.1.0"
         }
       ],
       "artifacts": [
         {
           "type": "file",
-          "url": "https://github.com/eamonxg/luci-theme-aurora/releases/download/v1.0.0/luci-theme-aurora-1.0.0-r20260619.apk",
-          "sha256": "0537ddda8e83b4ab98ac1e8891cd5882003c1c265eea124d8a4fc663a4962c8b",
-          "output": "luci-theme-aurora-1.0.0-r20260619.apk"
+          "url": "https://github.com/eamonxg/luci-theme-aurora/releases/download/v1.1.0/luci-theme-aurora-1.1.0-r20260711.apk",
+          "sha256": "f0298a276b6c84dab09753eafa0eab05a38ebc19f1928174fa2222e16ab4c4d1",
+          "output": "luci-theme-aurora-1.1.0-r20260711.apk"
         },
         {
           "type": "file",
-          "url": "https://github.com/eamonxg/luci-app-aurora-config/releases/download/v1.0.0/luci-app-aurora-config-1.0.0-r20260619.apk",
-          "sha256": "a0ceb67e6827bb1d7cd88077c199c5f4ed03f1f4eafce192958e36dec6a6c70c",
-          "output": "luci-app-aurora-config-1.0.0-r20260619.apk"
+          "url": "https://github.com/eamonxg/luci-app-aurora-config/releases/download/v1.1.0/luci-app-aurora-config-1.1.0-r20260711.apk",
+          "sha256": "4ec28968c0b205bf29db6561b2bf65bd322f02e9b1c04babeaac11f29c3e6063",
+          "output": "luci-app-aurora-config-1.1.0-r20260711.apk"
         },
         {
           "type": "file",
-          "url": "https://github.com/eamonxg/luci-app-aurora-config/releases/download/v1.0.0/luci-i18n-aurora-config-zh-cn-26.169.61452.cc474f9.apk",
-          "sha256": "7bd813c86bd115df94d90a7dabcbc071ef4ee463e33cfb25a5bffb42491b7170",
-          "output": "luci-i18n-aurora-config-zh-cn-26.169.61452~cc474f9.apk"
+          "url": "https://github.com/eamonxg/luci-app-aurora-config/releases/download/v1.1.0/luci-i18n-aurora-config-zh-cn-26.192.49224.6b21ba7.apk",
+          "sha256": "956d24703cbb81d5c9f144974b6a8a6f294c8e8d246ff96ac2e9d006168a4e19",
+          "output": "luci-i18n-aurora-config-zh-cn-26.192.49224~6b21ba7.apk"
         }
       ]
     },
