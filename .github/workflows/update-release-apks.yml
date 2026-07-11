@@ -16,27 +16,81 @@ concurrency:
 jobs:
   update:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
 
     steps:
       - name: checkout
         uses: actions/checkout@v6
 
-      - name: update release APK pins
+      - name: save current release APK manifest
+        run: cp .github/release-apks.json "${RUNNER_TEMP}/release-apks.before.json"
+
+      - name: update release APK manifest
         run: python3 .github/scripts/update-release-apks.py
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: check generated changes
-        run: git diff --check
+      - name: inspect generated changes
+        id: changes
+        shell: bash
+        run: |
+          git diff --check
+
+          if git diff --quiet -- .github/release-apks.json; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Release APK manifest is already current"
+            exit 0
+          fi
+
+          changed_files="$(git diff --name-only)"
+          if [ "$changed_files" != ".github/release-apks.json" ]; then
+            echo "Updater changed unexpected files:" >&2
+            printf '%s\n' "$changed_files" >&2
+            exit 1
+          fi
+
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: review generated manifest
+        if: steps.changes.outputs.changed == 'true'
+        run: |
+          python3 .github/scripts/validate-release-update.py \
+            "${RUNNER_TEMP}/release-apks.before.json" \
+            .github/release-apks.json
+
+      - name: download and verify all release APKs
+        if: steps.changes.outputs.changed == 'true'
+        run: |
+          python3 .github/scripts/download-release-apks.py \
+            .github/release-apks.json \
+            "${RUNNER_TEMP}/validated-feed"
 
       - name: create pull request
+        if: steps.changes.outputs.changed == 'true'
+        id: update_pr
         uses: peter-evans/create-pull-request@v7
         with:
+          token: ${{ secrets.AUTOMATION_TOKEN }}
+          add-paths: .github/release-apks.json
           branch: automation/update-release-apks
           delete-branch: true
-          commit-message: Update release APK pins
-          title: Update release APK pins
+          commit-message: Update release APK manifest
+          title: Update release APK manifest
           body: |
-            Automated refresh of release APK versions and sha256 pins.
+            Automated refresh of the release APK manifest, versions, and sha256 checksums.
 
-            After merging, the normal `build-feed` workflow will rebuild and publish the signed feed.
+            Every declared APK and archive was downloaded and its SHA256 checksum verified before this PR was created.
+
+            This PR is configured to merge automatically after all repository requirements pass. The normal `build-feed` workflow will then rebuild and publish the signed feed.
+
+      - name: enable automatic merge
+        if: steps.update_pr.outputs.pull-request-number != ''
+        env:
+          GH_TOKEN: ${{ secrets.AUTOMATION_TOKEN }}
+        run: |
+          gh pr merge "${{ steps.update_pr.outputs.pull-request-number }}" \
+            --repo "${{ github.repository }}" \
+            --auto \
+            --squash \
+            --delete-branch \
+            --match-head-commit "${{ steps.update_pr.outputs.pull-request-head-sha }}"

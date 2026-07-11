@@ -6,13 +6,14 @@ import os
 import re
 import sys
 import tarfile
+import urllib.error
 import urllib.request
 import zipfile
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
-PINS = ROOT / ".github" / "release-apk-pins.json"
+MANIFEST = ROOT / ".github" / "release-apks.json"
 TOKEN = os.environ.get("GITHUB_TOKEN")
 
 
@@ -73,15 +74,22 @@ def pick_apk(apks, pattern, label):
     return matches[0]
 
 
-def read_pins():
-    if not PINS.exists():
+def read_manifest():
+    if not MANIFEST.exists():
         return {}
-    return json.loads(PINS.read_text(encoding="utf-8"))
+    return json.loads(MANIFEST.read_text(encoding="utf-8"))
 
 
-def write_pins(data):
-    PINS.write_text(
-        json.dumps(data, indent=2, sort_keys=True) + "\n",
+def package_metadata(package_id):
+    for package in read_manifest().get("packages", []):
+        if package.get("id") == package_id:
+            return package.get("metadata", {})
+    return {}
+
+
+def write_manifest(data):
+    MANIFEST.write_text(
+        json.dumps(data, indent=2) + "\n",
         encoding="utf-8",
         newline="\n",
     )
@@ -237,6 +245,27 @@ def get_smartdns():
     }
 
 
+def get_temp_status():
+    release = latest_release("levi882/luci-app-temp-status")
+    main, _ = pick_asset(
+        release,
+        r"luci-app-temp-status-.+\.apk",
+        "temp-status LuCI APK",
+    )
+    i18n, _ = pick_asset(
+        release,
+        r"luci-i18n-temp-status-zh-cn-.+\.apk",
+        "temp-status zh-cn APK",
+    )
+    return {
+        "tag": release["tag_name"],
+        "main_name": main["name"],
+        "main_sha": sha256(download_asset(main)),
+        "i18n_name": i18n["name"],
+        "i18n_sha": sha256(download_asset(i18n)),
+    }
+
+
 def get_bandix():
     main_release = latest_release("timsaya/openwrt-bandix")
     main, main_match = pick_asset(
@@ -272,7 +301,7 @@ def get_bandix():
 def get_nikki():
     openwrt_release = os.environ.get("NIKKI_OPENWRT_RELEASE")
     if not openwrt_release:
-        openwrt_release = read_pins().get("nikki", {}).get("openwrt_release", "25.12")
+        openwrt_release = package_metadata("nikki").get("openwrt_release", "25.12")
     release = latest_release("morytyann/OpenWrt-nikki")
     asset, _ = pick_asset(
         release,
@@ -344,6 +373,296 @@ def get_aurora():
     }
 
 
+def release_url(repo, tag, filename):
+    return f"https://github.com/{repo}/releases/download/{tag}/{filename}"
+
+
+def file_artifact(repo, tag, source, digest, output=None):
+    return {
+        "type": "file",
+        "url": release_url(repo, tag, source),
+        "sha256": digest,
+        "output": output or source,
+    }
+
+
+def archive_file(source, digest, output=None):
+    return {
+        "source": source,
+        "sha256": digest,
+        "output": output or source,
+    }
+
+
+def release_ref(repository, tag):
+    return {"repository": repository, "tag": tag}
+
+
+def i18n_apk_version(version):
+    head, separator, tail = version.rpartition(".")
+    return f"{head}~{tail}" if separator else version
+
+
+def build_manifest(aurora, bandix, easytier, fakehttp, lucky, nikki, rtp2httpd, smartdns, temp_status):
+    packages = []
+
+    aurora_theme_repo = "eamonxg/luci-theme-aurora"
+    aurora_config_repo = "eamonxg/luci-app-aurora-config"
+    packages.append(
+        {
+            "id": "aurora",
+            "releases": [
+                release_ref(aurora_theme_repo, aurora["theme_tag"]),
+                release_ref(aurora_config_repo, aurora["config_tag"]),
+            ],
+            "artifacts": [
+                file_artifact(
+                    aurora_theme_repo,
+                    aurora["theme_tag"],
+                    f"luci-theme-aurora-{aurora['theme_version']}.apk",
+                    aurora["theme_sha"],
+                ),
+                file_artifact(
+                    aurora_config_repo,
+                    aurora["config_tag"],
+                    f"luci-app-aurora-config-{aurora['config_version']}.apk",
+                    aurora["config_sha"],
+                ),
+                file_artifact(
+                    aurora_config_repo,
+                    aurora["config_tag"],
+                    f"luci-i18n-aurora-config-zh-cn-{aurora['i18n_version']}.apk",
+                    aurora["i18n_sha"],
+                    f"luci-i18n-aurora-config-zh-cn-{i18n_apk_version(aurora['i18n_version'])}.apk",
+                ),
+            ],
+        }
+    )
+
+    bandix_repo = "timsaya/openwrt-bandix"
+    bandix_luci_repo = "timsaya/luci-app-bandix"
+    packages.append(
+        {
+            "id": "bandix",
+            "releases": [
+                release_ref(bandix_repo, bandix["tag"]),
+                release_ref(bandix_luci_repo, bandix["luci_tag"]),
+            ],
+            "artifacts": [
+                file_artifact(
+                    bandix_repo,
+                    bandix["tag"],
+                    f"bandix-{bandix['version']}_x86_64.apk",
+                    bandix["main_sha"],
+                    f"bandix-{bandix['version']}.apk",
+                ),
+                file_artifact(
+                    bandix_luci_repo,
+                    bandix["luci_tag"],
+                    f"luci-app-bandix-{bandix['luci_version']}_all.apk",
+                    bandix["luci_sha"],
+                    f"luci-app-bandix-{bandix['luci_version']}.apk",
+                ),
+                file_artifact(
+                    bandix_luci_repo,
+                    bandix["luci_tag"],
+                    f"luci-i18n-bandix-zh-cn-{bandix['i18n_version']}_all.apk",
+                    bandix["i18n_sha"],
+                    f"luci-i18n-bandix-zh-cn-{i18n_apk_version(bandix['i18n_version'])}.apk",
+                ),
+            ],
+        }
+    )
+
+    easytier_repo = "EasyTier/luci-app-easytier"
+    easytier_archive = f"EasyTier-{easytier['tag']}-x86_64-SNAPSHOT.zip"
+    packages.append(
+        {
+            "id": "easytier",
+            "releases": [release_ref(easytier_repo, easytier["tag"])],
+            "artifacts": [
+                {
+                    "type": "archive",
+                    "format": "zip",
+                    "url": release_url(easytier_repo, easytier["tag"], easytier_archive),
+                    "sha256": easytier["archive_sha"],
+                    "files": [
+                        archive_file(easytier["main_name"], easytier["main_sha"]),
+                        archive_file(easytier["luci_name"], easytier["luci_sha"]),
+                        archive_file(easytier["i18n_name"], easytier["i18n_sha"]),
+                    ],
+                }
+            ],
+        }
+    )
+
+    fakehttp_repo = "levi882/FakeHTTP"
+    fakehttp_prefix = f"fakehttp-openwrt-{fakehttp['openwrt_release']}-x86_64"
+    packages.append(
+        {
+            "id": "fakehttp",
+            "releases": [release_ref(fakehttp_repo, fakehttp["tag"])],
+            "metadata": {"openwrt_release": fakehttp["openwrt_release"]},
+            "artifacts": [
+                file_artifact(
+                    fakehttp_repo,
+                    fakehttp["tag"],
+                    f"{fakehttp_prefix}-fakehttp-{fakehttp['version']}-{fakehttp['package_release']}.apk",
+                    fakehttp["main_sha"],
+                    f"fakehttp-{fakehttp['version']}-{fakehttp['package_release']}.apk",
+                ),
+                file_artifact(
+                    fakehttp_repo,
+                    fakehttp["tag"],
+                    f"{fakehttp_prefix}-luci-app-fakehttp-{fakehttp['version']}-{fakehttp['package_release']}.apk",
+                    fakehttp["luci_sha"],
+                    f"luci-app-fakehttp-{fakehttp['version']}-{fakehttp['package_release']}.apk",
+                ),
+                file_artifact(
+                    fakehttp_repo,
+                    fakehttp["tag"],
+                    f"{fakehttp_prefix}-luci-i18n-fakehttp-zh-cn-{fakehttp['version']}-{fakehttp['i18n_release']}.apk",
+                    fakehttp["i18n_sha"],
+                    f"luci-i18n-fakehttp-zh-cn-{fakehttp['version']}-{fakehttp['i18n_release']}.apk",
+                ),
+            ],
+        }
+    )
+
+    lucky_repo = "levi882/luci-app-lucky"
+    packages.append(
+        {
+            "id": "lucky",
+            "releases": [release_ref(lucky_repo, lucky["tag"])],
+            "artifacts": [
+                file_artifact(
+                    lucky_repo,
+                    lucky["tag"],
+                    f"lucky-{lucky['version']}_x86_64.apk",
+                    lucky["main_sha"],
+                    f"lucky-{lucky['version']}.apk",
+                ),
+                file_artifact(
+                    lucky_repo,
+                    lucky["tag"],
+                    f"luci-app-lucky-{lucky['luci_version']}_x86_64.apk",
+                    lucky["luci_sha"],
+                    f"luci-app-lucky-{lucky['luci_version']}.apk",
+                ),
+                file_artifact(
+                    lucky_repo,
+                    lucky["tag"],
+                    f"luci-i18n-lucky-zh-cn-{lucky['i18n_version']}_x86_64.apk",
+                    lucky["i18n_sha"],
+                    f"luci-i18n-lucky-zh-cn-{lucky['i18n_version']}.apk",
+                ),
+            ],
+        }
+    )
+
+    nikki_repo = "morytyann/OpenWrt-nikki"
+    nikki_archive = f"nikki_x86_64-openwrt-{nikki['openwrt_release']}.tar.gz"
+    packages.append(
+        {
+            "id": "nikki",
+            "releases": [release_ref(nikki_repo, nikki["tag"])],
+            "metadata": {"openwrt_release": nikki["openwrt_release"]},
+            "artifacts": [
+                {
+                    "type": "archive",
+                    "format": "tar.gz",
+                    "url": release_url(nikki_repo, nikki["tag"], nikki_archive),
+                    "sha256": nikki["archive_sha"],
+                    "files": [
+                        archive_file(name, digest)
+                        for name, digest in sorted(nikki["apks"].items())
+                    ],
+                }
+            ],
+        }
+    )
+
+    rtp2httpd_repo = "stackia/rtp2httpd"
+    rtp_version = f"{rtp2httpd['version']}-{rtp2httpd['package_release']}"
+    packages.append(
+        {
+            "id": "rtp2httpd",
+            "releases": [release_ref(rtp2httpd_repo, rtp2httpd["tag"])],
+            "artifacts": [
+                file_artifact(
+                    rtp2httpd_repo,
+                    rtp2httpd["tag"],
+                    f"rtp2httpd-{rtp_version}_x86_64.apk",
+                    rtp2httpd["main_sha"],
+                    f"rtp2httpd-{rtp_version}.apk",
+                ),
+                file_artifact(
+                    rtp2httpd_repo,
+                    rtp2httpd["tag"],
+                    f"luci-app-rtp2httpd-{rtp_version}.apk",
+                    rtp2httpd["luci_sha"],
+                ),
+                file_artifact(
+                    rtp2httpd_repo,
+                    rtp2httpd["tag"],
+                    f"luci-i18n-rtp2httpd-zh-cn-{rtp2httpd['version']}.apk",
+                    rtp2httpd["i18n_sha"],
+                ),
+            ],
+        }
+    )
+
+    smartdns_repo = "pymumu/smartdns"
+    smartdns_apk_version = smartdns["version"].rsplit("-", 1)
+    smartdns_apk_version = f"{smartdns_apk_version[0]}-r{smartdns_apk_version[1]}"
+    packages.append(
+        {
+            "id": "smartdns",
+            "releases": [release_ref(smartdns_repo, smartdns["tag"])],
+            "artifacts": [
+                file_artifact(
+                    smartdns_repo,
+                    smartdns["tag"],
+                    f"smartdns.{smartdns['version']}.x86_64-openwrt-all.apk",
+                    smartdns["main_sha"],
+                    f"smartdns-{smartdns_apk_version}.apk",
+                ),
+                file_artifact(
+                    smartdns_repo,
+                    smartdns["tag"],
+                    f"luci-app-smartdns.{smartdns['version']}.all-luci-all.apk",
+                    smartdns["luci_sha"],
+                    f"luci-app-smartdns-{smartdns_apk_version}.apk",
+                ),
+            ],
+        }
+    )
+
+    temp_status_repo = "levi882/luci-app-temp-status"
+    packages.append(
+        {
+            "id": "temp-status",
+            "releases": [release_ref(temp_status_repo, temp_status["tag"])],
+            "artifacts": [
+                file_artifact(
+                    temp_status_repo,
+                    temp_status["tag"],
+                    temp_status["main_name"],
+                    temp_status["main_sha"],
+                ),
+                file_artifact(
+                    temp_status_repo,
+                    temp_status["tag"],
+                    temp_status["i18n_name"],
+                    temp_status["i18n_sha"],
+                ),
+            ],
+        }
+    )
+
+    return {"schema_version": 1, "packages": packages}
+
+
 def main():
     print("Checking latest release APKs...")
     aurora = get_aurora()
@@ -352,20 +671,22 @@ def main():
     rtp2httpd = get_rtp2httpd()
     fakehttp = get_fakehttp()
     smartdns = get_smartdns()
+    temp_status = get_temp_status()
     bandix = get_bandix()
     nikki = get_nikki()
 
-    write_pins(
-        {
-            "aurora": aurora,
-            "bandix": bandix,
-            "easytier": easytier,
-            "fakehttp": fakehttp,
-            "lucky": lucky,
-            "nikki": nikki,
-            "rtp2httpd": rtp2httpd,
-            "smartdns": smartdns,
-        }
+    write_manifest(
+        build_manifest(
+            aurora,
+            bandix,
+            easytier,
+            fakehttp,
+            lucky,
+            nikki,
+            rtp2httpd,
+            smartdns,
+            temp_status,
+        )
     )
 
     for name, data in [
@@ -375,6 +696,7 @@ def main():
         ("rtp2httpd", rtp2httpd),
         ("FakeHTTP", fakehttp),
         ("SmartDNS", smartdns),
+        ("temp-status", temp_status),
         ("Bandix", bandix),
         ("Nikki", nikki),
     ]:
