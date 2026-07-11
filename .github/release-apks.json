@@ -138,25 +138,25 @@
       "releases": [
         {
           "repository": "levi882/luci-app-lucky",
-          "tag": "v3.0.0_beta6"
+          "tag": "v3.0.0_beta8"
         }
       ],
       "artifacts": [
         {
           "type": "file",
-          "url": "https://github.com/levi882/luci-app-lucky/releases/download/v3.0.0_beta6/lucky-3.0.0_beta6-r1_x86_64.apk",
-          "sha256": "180ff9302886ad519ac11708dc7f3d6b6348155932dcbc12c72fc36c3d4b4a66",
-          "output": "lucky-3.0.0_beta6-r1.apk"
+          "url": "https://github.com/levi882/luci-app-lucky/releases/download/v3.0.0_beta8/lucky-3.0.0_beta8-r1_x86_64.apk",
+          "sha256": "c41464d1bee092803741a113e365b36cb0a0d9372d392dc6431f063ff06d8e7c",
+          "output": "lucky-3.0.0_beta8-r1.apk"
         },
         {
           "type": "file",
-          "url": "https://github.com/levi882/luci-app-lucky/releases/download/v3.0.0_beta6/luci-app-lucky-2.2.2-r1_x86_64.apk",
-          "sha256": "42822bf7457fb541a259c0ace945a3f0c19e701113c01d07f1d9afa3cb56a598",
+          "url": "https://github.com/levi882/luci-app-lucky/releases/download/v3.0.0_beta8/luci-app-lucky-2.2.2-r1_x86_64.apk",
+          "sha256": "78d17faefb3512f9de611cd7e2bbc03f358d5d0eece75621ee25b5dfa0591b62",
           "output": "luci-app-lucky-2.2.2-r1.apk"
         },
         {
           "type": "file",
-          "url": "https://github.com/levi882/luci-app-lucky/releases/download/v3.0.0_beta6/luci-i18n-lucky-zh-cn-0_x86_64.apk",
+          "url": "https://github.com/levi882/luci-app-lucky/releases/download/v3.0.0_beta8/luci-i18n-lucky-zh-cn-0_x86_64.apk",
           "sha256": "10e4e86ca9bd5fa3ade1f929b38596a2481148690be9e7615948593bb77bd93c",
           "output": "luci-i18n-lucky-zh-cn-0.apk"
         }
