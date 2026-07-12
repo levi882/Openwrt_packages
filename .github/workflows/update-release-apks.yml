@@ -81,16 +81,15 @@ jobs:
 
             Every declared APK and archive was downloaded and its SHA256 checksum verified before this PR was created.
 
-            This PR is configured to merge automatically after all repository requirements pass. The normal `build-feed` workflow will then rebuild and publish the signed feed.
+            This PR is merged automatically after the updater validates every declared artifact. The normal `build-feed` workflow will then rebuild and publish the signed feed.
 
-      - name: enable automatic merge
+      - name: merge pull request
         if: steps.update_pr.outputs.pull-request-number != ''
         env:
           GH_TOKEN: ${{ secrets.AUTOMATION_TOKEN }}
         run: |
           gh pr merge "${{ steps.update_pr.outputs.pull-request-number }}" \
             --repo "${{ github.repository }}" \
-            --auto \
             --squash \
             --delete-branch \
             --match-head-commit "${{ steps.update_pr.outputs.pull-request-head-sha }}"
