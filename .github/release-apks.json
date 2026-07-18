@@ -214,27 +214,27 @@
       "releases": [
         {
           "repository": "stackia/rtp2httpd",
-          "tag": "v3.14.3"
+          "tag": "v3.15.3"
         }
       ],
       "artifacts": [
         {
           "type": "file",
-          "url": "https://github.com/stackia/rtp2httpd/releases/download/v3.14.3/rtp2httpd-3.14.3-r1_x86_64.apk",
-          "sha256": "6ba33e2e8316982d81441882addb87391d0a45935c16e6ecb1a90f24c11ce67e",
-          "output": "rtp2httpd-3.14.3-r1.apk"
+          "url": "https://github.com/stackia/rtp2httpd/releases/download/v3.15.3/rtp2httpd-3.15.3-r1_x86_64.apk",
+          "sha256": "0c7ea4cad8ddb0da07db4b21aaba7bd28e5ccf5a0f5e6ee89e33cdad63955aba",
+          "output": "rtp2httpd-3.15.3-r1.apk"
         },
         {
           "type": "file",
-          "url": "https://github.com/stackia/rtp2httpd/releases/download/v3.14.3/luci-app-rtp2httpd-3.14.3-r1.apk",
-          "sha256": "62f452b36254ca9e768ce3820c7814bdce43b592fdfef682ad44ab74a1837e34",
-          "output": "luci-app-rtp2httpd-3.14.3-r1.apk"
+          "url": "https://github.com/stackia/rtp2httpd/releases/download/v3.15.3/luci-app-rtp2httpd-3.15.3-r1.apk",
+          "sha256": "501aaff0ba0ae11d56d7ba5a806dd324ecd80e6e6405e2d68f5a041a0a2e044b",
+          "output": "luci-app-rtp2httpd-3.15.3-r1.apk"
         },
         {
           "type": "file",
-          "url": "https://github.com/stackia/rtp2httpd/releases/download/v3.14.3/luci-i18n-rtp2httpd-zh-cn-3.14.3.apk",
-          "sha256": "af3ba86ad8c323c49af6d1754aa39bdec36fd649bd07957358fcf7668f7789b1",
-          "output": "luci-i18n-rtp2httpd-zh-cn-3.14.3.apk"
+          "url": "https://github.com/stackia/rtp2httpd/releases/download/v3.15.3/luci-i18n-rtp2httpd-zh-cn-3.15.3.apk",
+          "sha256": "3a03beaf51c4cb9d12beca89af5ea17680542e8038447331ffbf4929c1bfe2e7",
+          "output": "luci-i18n-rtp2httpd-zh-cn-3.15.3.apk"
         }
       ]
     },
