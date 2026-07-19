@@ -56,7 +56,8 @@ jobs:
         run: |
           python3 .github/scripts/validate-release-update.py \
             "${RUNNER_TEMP}/release-apks.before.json" \
-            .github/release-apks.json
+            .github/release-apks.json \
+            --allow-added-package iptv
 
       - name: download and verify all release APKs
         if: steps.changes.outputs.changed == 'true'

@@ -10,6 +10,13 @@ def parse_args():
     )
     parser.add_argument("before", type=Path)
     parser.add_argument("after", type=Path)
+    parser.add_argument(
+        "--allow-added-package",
+        action="append",
+        default=[],
+        metavar="PACKAGE_ID",
+        help="allow this package group to appear for the first time; may be repeated",
+    )
     return parser.parse_args()
 
 
@@ -67,17 +74,21 @@ def main():
 
     before_ids = set(before)
     after_ids = set(after)
-    if before_ids != after_ids:
-        removed = sorted(before_ids - after_ids)
-        added = sorted(after_ids - before_ids)
+    removed = sorted(before_ids - after_ids)
+    added = sorted(after_ids - before_ids)
+    unexpected_added = sorted(set(added) - set(args.allow_added_package))
+    if removed or unexpected_added:
         details = []
         if removed:
             details.append(f"removed package groups: {', '.join(removed)}")
-        if added:
-            details.append(f"unexpected package groups: {', '.join(added)}")
+        if unexpected_added:
+            details.append(f"unexpected package groups: {', '.join(unexpected_added)}")
         raise SystemExit("Generated manifest changed package groups; " + "; ".join(details))
 
-    changed = 0
+    changed = len(added)
+    for package_id in added:
+        print(f"{package_id}: added {tags(after[package_id])}")
+
     for package_id in sorted(before):
         old_package = before[package_id]
         new_package = after[package_id]
@@ -98,7 +109,7 @@ def main():
     if not changed:
         raise SystemExit("Manifest file changed, but no package metadata changed")
 
-    print(f"Validated {changed} updated package group(s); no groups or APKs were removed")
+    print(f"Validated {changed} changed package group(s); no groups or APKs were removed")
 
 
 if __name__ == "__main__":
