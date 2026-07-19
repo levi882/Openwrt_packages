@@ -224,6 +224,43 @@ def get_fakehttp():
     }
 
 
+def get_iptv():
+    try:
+        release = latest_release("levi882/iptv")
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            print("IPTV: no published release yet; keeping it out of the manifest")
+            return None
+        raise
+
+    main, main_match = pick_asset(
+        release,
+        r"iptv-refresh-(?P<version>.+)-(?P<release>r\d+)\.apk",
+        "IPTV Refresh x86_64 APK",
+    )
+    version = main_match.group("version")
+    package_release = main_match.group("release")
+    luci, _ = pick_asset(
+        release,
+        rf"luci-app-iptv-refresh-{re.escape(version)}-{re.escape(package_release)}\.apk",
+        "IPTV Refresh LuCI APK",
+    )
+    i18n, _ = pick_asset(
+        release,
+        rf"luci-i18n-iptv-refresh-zh-cn-{re.escape(version)}-{re.escape(package_release)}\.apk",
+        "IPTV Refresh zh-cn APK",
+    )
+    return {
+        "tag": release["tag_name"],
+        "main_name": main["name"],
+        "main_sha": sha256(download_asset(main)),
+        "luci_name": luci["name"],
+        "luci_sha": sha256(download_asset(luci)),
+        "i18n_name": i18n["name"],
+        "i18n_sha": sha256(download_asset(i18n)),
+    }
+
+
 def get_smartdns():
     release = latest_release("pymumu/smartdns")
     main, main_match = pick_asset(
@@ -403,7 +440,18 @@ def i18n_apk_version(version):
     return f"{head}~{tail}" if separator else version
 
 
-def build_manifest(aurora, bandix, easytier, fakehttp, lucky, nikki, rtp2httpd, smartdns, temp_status):
+def build_manifest(
+    aurora,
+    bandix,
+    easytier,
+    fakehttp,
+    iptv,
+    lucky,
+    nikki,
+    rtp2httpd,
+    smartdns,
+    temp_status,
+):
     packages = []
 
     aurora_theme_repo = "eamonxg/luci-theme-aurora"
@@ -528,6 +576,35 @@ def build_manifest(aurora, bandix, easytier, fakehttp, lucky, nikki, rtp2httpd, 
             ],
         }
     )
+
+    if iptv is not None:
+        iptv_repo = "levi882/iptv"
+        packages.append(
+            {
+                "id": "iptv",
+                "releases": [release_ref(iptv_repo, iptv["tag"])],
+                "artifacts": [
+                    file_artifact(
+                        iptv_repo,
+                        iptv["tag"],
+                        iptv["main_name"],
+                        iptv["main_sha"],
+                    ),
+                    file_artifact(
+                        iptv_repo,
+                        iptv["tag"],
+                        iptv["luci_name"],
+                        iptv["luci_sha"],
+                    ),
+                    file_artifact(
+                        iptv_repo,
+                        iptv["tag"],
+                        iptv["i18n_name"],
+                        iptv["i18n_sha"],
+                    ),
+                ],
+            }
+        )
 
     lucky_repo = "levi882/luci-app-lucky"
     packages.append(
@@ -670,6 +747,7 @@ def main():
     easytier = get_easytier()
     rtp2httpd = get_rtp2httpd()
     fakehttp = get_fakehttp()
+    iptv = get_iptv()
     smartdns = get_smartdns()
     temp_status = get_temp_status()
     bandix = get_bandix()
@@ -681,6 +759,7 @@ def main():
             bandix,
             easytier,
             fakehttp,
+            iptv,
             lucky,
             nikki,
             rtp2httpd,
@@ -695,11 +774,14 @@ def main():
         ("EasyTier", easytier),
         ("rtp2httpd", rtp2httpd),
         ("FakeHTTP", fakehttp),
+        ("IPTV", iptv),
         ("SmartDNS", smartdns),
         ("temp-status", temp_status),
         ("Bandix", bandix),
         ("Nikki", nikki),
     ]:
+        if data is None:
+            continue
         if name == "Aurora":
             print(f"{name}: theme {data['theme_tag']}, config {data['config_tag']}")
         else:

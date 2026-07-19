@@ -10,7 +10,8 @@ https://openwrt-packages.pages.dev/openwrt-25.12/x86_64/myfeed/packages.adb
 
 It currently carries personal-use packages such as Aurora theme, Bandix,
 EasyTier, Lucky, Nikki, rtp2httpd, SmartDNS, and temp-status plus their LuCI
-packages where available.
+packages where available. IPTV Refresh joins automatically after its first
+tagged Release is published.
 
 ## Build
 
@@ -64,38 +65,5 @@ In broad strokes it:
 - removes stale kernel/package-manager/LuCI runtime files from the backup
 - reinstalls selected packages on first boot
 - preserves the current extroot entry by default
-- restores the nginx-based IPTV refresh trigger when `/mnt/sda1/iptv` exists
-
-The IPTV trigger is nginx-only. HA can use a stable URL without knowing the
-token:
-
-```yaml
-rest_command:
-  iptv_refresh:
-    url: "http://10.1.1.1/iptv/refresh?iface=eth3.3927"
-    method: GET
-```
-
-Nginx injects the current token when proxying to the local daemon. Generated
-IPTV values are also written to:
-
-```text
-/mnt/sda1/iptv/config/local/iptv_refresh.env
-/mnt/sda1/iptv/config/local/home_assistant_rest_command.yaml
-```
-
-## Useful Overrides
-
-```sh
-RESTORE_KEEP_EXTROOT=1
-RESTORE_INSTALL_PACKAGES="..."
-RESTORE_MYFEED_INSTALL_PACKAGES="..."
-RESTORE_REMOVE_PREINSTALLED_LUCI_PACKAGES="..."
-RESTORE_IPTV_ENABLE=0
-RESTORE_IPTV_REPO_ROOT=/mnt/sda1/iptv
-RESTORE_IPTV_REFRESH_IFACE=eth3.3927
-RESTORE_IPTV_NGINX_SERVER_CONF=/etc/nginx/conf.d/luci.locations
-```
-
-Use `RESTORE_KEEP_EXTROOT=1` only when you want the backup's old extroot entry
-restored instead of keeping the current firmware's extroot mount.
+- reinstalls and configures the packaged IPTV Refresh service when available
+- leaves IPTV stopped and records a warning when the APK is unavailable
