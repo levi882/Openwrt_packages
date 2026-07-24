@@ -6,31 +6,31 @@
       "releases": [
         {
           "repository": "eamonxg/luci-theme-aurora",
-          "tag": "v1.0.0"
+          "tag": "v1.1.0"
         },
         {
           "repository": "eamonxg/luci-app-aurora-config",
-          "tag": "v1.0.0"
+          "tag": "v1.1.0"
         }
       ],
       "artifacts": [
         {
           "type": "file",
-          "url": "https://github.com/eamonxg/luci-theme-aurora/releases/download/v1.0.0/luci-theme-aurora-1.0.0-r20260619.apk",
-          "sha256": "0537ddda8e83b4ab98ac1e8891cd5882003c1c265eea124d8a4fc663a4962c8b",
-          "output": "luci-theme-aurora-1.0.0-r20260619.apk"
+          "url": "https://github.com/eamonxg/luci-theme-aurora/releases/download/v1.1.0/luci-theme-aurora-1.1.0-r20260711.apk",
+          "sha256": "f0298a276b6c84dab09753eafa0eab05a38ebc19f1928174fa2222e16ab4c4d1",
+          "output": "luci-theme-aurora-1.1.0-r20260711.apk"
         },
         {
           "type": "file",
-          "url": "https://github.com/eamonxg/luci-app-aurora-config/releases/download/v1.0.0/luci-app-aurora-config-1.0.0-r20260619.apk",
-          "sha256": "a0ceb67e6827bb1d7cd88077c199c5f4ed03f1f4eafce192958e36dec6a6c70c",
-          "output": "luci-app-aurora-config-1.0.0-r20260619.apk"
+          "url": "https://github.com/eamonxg/luci-app-aurora-config/releases/download/v1.1.0/luci-app-aurora-config-1.1.0-r20260711.apk",
+          "sha256": "4ec28968c0b205bf29db6561b2bf65bd322f02e9b1c04babeaac11f29c3e6063",
+          "output": "luci-app-aurora-config-1.1.0-r20260711.apk"
         },
         {
           "type": "file",
-          "url": "https://github.com/eamonxg/luci-app-aurora-config/releases/download/v1.0.0/luci-i18n-aurora-config-zh-cn-26.169.61452.cc474f9.apk",
-          "sha256": "7bd813c86bd115df94d90a7dabcbc071ef4ee463e33cfb25a5bffb42491b7170",
-          "output": "luci-i18n-aurora-config-zh-cn-26.169.61452~cc474f9.apk"
+          "url": "https://github.com/eamonxg/luci-app-aurora-config/releases/download/v1.1.0/luci-i18n-aurora-config-zh-cn-26.192.49224.6b21ba7.apk",
+          "sha256": "956d24703cbb81d5c9f144974b6a8a6f294c8e8d246ff96ac2e9d006168a4e19",
+          "output": "luci-i18n-aurora-config-zh-cn-26.192.49224~6b21ba7.apk"
         }
       ]
     },
@@ -134,29 +134,58 @@
       ]
     },
     {
-      "id": "lucky",
+      "id": "iptv",
       "releases": [
         {
-          "repository": "levi882/luci-app-lucky",
-          "tag": "v3.0.0_beta6"
+          "repository": "levi882/iptv",
+          "tag": "v0.1.0-r26"
         }
       ],
       "artifacts": [
         {
           "type": "file",
-          "url": "https://github.com/levi882/luci-app-lucky/releases/download/v3.0.0_beta6/lucky-3.0.0_beta6-r1_x86_64.apk",
-          "sha256": "180ff9302886ad519ac11708dc7f3d6b6348155932dcbc12c72fc36c3d4b4a66",
-          "output": "lucky-3.0.0_beta6-r1.apk"
+          "url": "https://github.com/levi882/iptv/releases/download/v0.1.0-r26/iptv-refresh-0.1.0-r26.apk",
+          "sha256": "41ce182eb4545f8d8d598b2248f15c3023a4cb0b6f82efb0774bd0d93de4172e",
+          "output": "iptv-refresh-0.1.0-r26.apk"
         },
         {
           "type": "file",
-          "url": "https://github.com/levi882/luci-app-lucky/releases/download/v3.0.0_beta6/luci-app-lucky-2.2.2-r1_x86_64.apk",
-          "sha256": "42822bf7457fb541a259c0ace945a3f0c19e701113c01d07f1d9afa3cb56a598",
+          "url": "https://github.com/levi882/iptv/releases/download/v0.1.0-r26/luci-app-iptv-refresh-0.1.0-r26.apk",
+          "sha256": "79d279cf46e0c360305fe7f9f1ce7b3687feae16ffccde8cb233d0b473b78ddf",
+          "output": "luci-app-iptv-refresh-0.1.0-r26.apk"
+        },
+        {
+          "type": "file",
+          "url": "https://github.com/levi882/iptv/releases/download/v0.1.0-r26/luci-i18n-iptv-refresh-zh-cn-0.1.0-r26.apk",
+          "sha256": "35cc58d3074523111d6faace2a1e9793d0d6c0f2610eed1cb0a51c103fd49ef7",
+          "output": "luci-i18n-iptv-refresh-zh-cn-0.1.0-r26.apk"
+        }
+      ]
+    },
+    {
+      "id": "lucky",
+      "releases": [
+        {
+          "repository": "levi882/luci-app-lucky",
+          "tag": "v3.0.0_beta8"
+        }
+      ],
+      "artifacts": [
+        {
+          "type": "file",
+          "url": "https://github.com/levi882/luci-app-lucky/releases/download/v3.0.0_beta8/lucky-3.0.0_beta8-r1_x86_64.apk",
+          "sha256": "c41464d1bee092803741a113e365b36cb0a0d9372d392dc6431f063ff06d8e7c",
+          "output": "lucky-3.0.0_beta8-r1.apk"
+        },
+        {
+          "type": "file",
+          "url": "https://github.com/levi882/luci-app-lucky/releases/download/v3.0.0_beta8/luci-app-lucky-2.2.2-r1_x86_64.apk",
+          "sha256": "78d17faefb3512f9de611cd7e2bbc03f358d5d0eece75621ee25b5dfa0591b62",
           "output": "luci-app-lucky-2.2.2-r1.apk"
         },
         {
           "type": "file",
-          "url": "https://github.com/levi882/luci-app-lucky/releases/download/v3.0.0_beta6/luci-i18n-lucky-zh-cn-0_x86_64.apk",
+          "url": "https://github.com/levi882/luci-app-lucky/releases/download/v3.0.0_beta8/luci-i18n-lucky-zh-cn-0_x86_64.apk",
           "sha256": "10e4e86ca9bd5fa3ade1f929b38596a2481148690be9e7615948593bb77bd93c",
           "output": "luci-i18n-lucky-zh-cn-0.apk"
         }
@@ -214,27 +243,27 @@
       "releases": [
         {
           "repository": "stackia/rtp2httpd",
-          "tag": "v3.14.3"
+          "tag": "v3.15.3"
         }
       ],
       "artifacts": [
         {
           "type": "file",
-          "url": "https://github.com/stackia/rtp2httpd/releases/download/v3.14.3/rtp2httpd-3.14.3-r1_x86_64.apk",
-          "sha256": "6ba33e2e8316982d81441882addb87391d0a45935c16e6ecb1a90f24c11ce67e",
-          "output": "rtp2httpd-3.14.3-r1.apk"
+          "url": "https://github.com/stackia/rtp2httpd/releases/download/v3.15.3/rtp2httpd-3.15.3-r1_x86_64.apk",
+          "sha256": "0c7ea4cad8ddb0da07db4b21aaba7bd28e5ccf5a0f5e6ee89e33cdad63955aba",
+          "output": "rtp2httpd-3.15.3-r1.apk"
         },
         {
           "type": "file",
-          "url": "https://github.com/stackia/rtp2httpd/releases/download/v3.14.3/luci-app-rtp2httpd-3.14.3-r1.apk",
-          "sha256": "62f452b36254ca9e768ce3820c7814bdce43b592fdfef682ad44ab74a1837e34",
-          "output": "luci-app-rtp2httpd-3.14.3-r1.apk"
+          "url": "https://github.com/stackia/rtp2httpd/releases/download/v3.15.3/luci-app-rtp2httpd-3.15.3-r1.apk",
+          "sha256": "501aaff0ba0ae11d56d7ba5a806dd324ecd80e6e6405e2d68f5a041a0a2e044b",
+          "output": "luci-app-rtp2httpd-3.15.3-r1.apk"
         },
         {
           "type": "file",
-          "url": "https://github.com/stackia/rtp2httpd/releases/download/v3.14.3/luci-i18n-rtp2httpd-zh-cn-3.14.3.apk",
-          "sha256": "af3ba86ad8c323c49af6d1754aa39bdec36fd649bd07957358fcf7668f7789b1",
-          "output": "luci-i18n-rtp2httpd-zh-cn-3.14.3.apk"
+          "url": "https://github.com/stackia/rtp2httpd/releases/download/v3.15.3/luci-i18n-rtp2httpd-zh-cn-3.15.3.apk",
+          "sha256": "3a03beaf51c4cb9d12beca89af5ea17680542e8038447331ffbf4929c1bfe2e7",
+          "output": "luci-i18n-rtp2httpd-zh-cn-3.15.3.apk"
         }
       ]
     },
@@ -242,22 +271,22 @@
       "id": "smartdns",
       "releases": [
         {
-          "repository": "pymumu/smartdns",
-          "tag": "Release48.2"
+          "repository": "PikuZheng/smartdns",
+          "tag": "1.2026.v48.2.9"
         }
       ],
       "artifacts": [
         {
           "type": "file",
-          "url": "https://github.com/pymumu/smartdns/releases/download/Release48.2/smartdns.1.2026.06.28-1614.x86_64-openwrt-all.apk",
-          "sha256": "f467558dbc09020a6ecdbed90001daedf43c50819a4264da9eb5a4aa3372d0b3",
-          "output": "smartdns-1.2026.06.28-r1614.apk"
+          "url": "https://github.com/PikuZheng/smartdns/releases/download/1.2026.v48.2.9/smartdns.1.2026.v48.2.9.x86_64-openwrt.apk",
+          "sha256": "8504a9d52d153d6fe15d71c29fac34f6e584de165dbfa81b4d50d068214da87e",
+          "output": "smartdns-1.2026.v48.2.9.apk"
         },
         {
           "type": "file",
-          "url": "https://github.com/pymumu/smartdns/releases/download/Release48.2/luci-app-smartdns.1.2026.06.28-1614.all-luci-all.apk",
-          "sha256": "33209bd0d64be5371b97d9d3c5e775fcb5172983d0f0e452e886142c753bf699",
-          "output": "luci-app-smartdns-1.2026.06.28-r1614.apk"
+          "url": "https://github.com/PikuZheng/smartdns/releases/download/1.2026.v48.2.9/luci-app-smartdns.1.2026.v48.2.9.luci-all.apk",
+          "sha256": "053790a9d9794bc53fb5846385421616c47bf4e88ab7621b03c77cda4dad0c66",
+          "output": "luci-app-smartdns-1.2026.v48.2.9.apk"
         }
       ]
     },
