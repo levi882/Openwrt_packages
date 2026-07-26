@@ -35,6 +35,11 @@ def latest_release(repo):
     return json.loads(data.decode("utf-8"))
 
 
+def releases_list(repo):
+    data = github_request(f"https://api.github.com/repos/{repo}/releases?per_page=100")
+    return json.loads(data.decode("utf-8"))
+
+
 def sha256(data):
     return hashlib.sha256(data).hexdigest()
 
@@ -262,24 +267,41 @@ def get_iptv():
 
 
 def get_smartdns():
-    release = latest_release("pymumu/smartdns")
-    main, main_match = pick_asset(
-        release,
-        r"smartdns\.(?P<version>.+)\.x86_64-openwrt-all\.apk",
-        "SmartDNS x86_64 APK",
+    repo = "PikuZheng/smartdns"
+    releases = releases_list(repo)
+    for release in releases:
+        main = None
+        version = None
+        for asset in release.get("assets", []):
+            match = re.fullmatch(
+                r"smartdns\.(?P<version>.+)\.x86_64-openwrt\.apk",
+                asset["name"],
+            )
+            if match:
+                main = asset
+                version = match.group("version")
+                break
+        if main is None:
+            continue
+        luci = None
+        for asset in release.get("assets", []):
+            if re.fullmatch(
+                rf"luci-app-smartdns\.{re.escape(version)}\.luci-all\.apk",
+                asset["name"],
+            ):
+                luci = asset
+                break
+        if luci is None:
+            continue
+        return {
+            "tag": release["tag_name"],
+            "version": version,
+            "main_sha": sha256(download_asset(main)),
+            "luci_sha": sha256(download_asset(luci)),
+        }
+    raise SystemExit(
+        f"No {repo} release found with both daemon and LuCI APK assets"
     )
-    version = main_match.group("version")
-    luci, _ = pick_asset(
-        release,
-        rf"luci-app-smartdns\.{re.escape(version)}\.all-luci-all\.apk",
-        "SmartDNS LuCI APK",
-    )
-    return {
-        "tag": release["tag_name"],
-        "version": version,
-        "main_sha": sha256(download_asset(main)),
-        "luci_sha": sha256(download_asset(luci)),
-    }
 
 
 def get_temp_status():
@@ -689,9 +711,8 @@ def build_manifest(
         }
     )
 
-    smartdns_repo = "pymumu/smartdns"
-    smartdns_apk_version = smartdns["version"].rsplit("-", 1)
-    smartdns_apk_version = f"{smartdns_apk_version[0]}-r{smartdns_apk_version[1]}"
+    smartdns_repo = "PikuZheng/smartdns"
+    smartdns_apk_version = smartdns["version"]
     packages.append(
         {
             "id": "smartdns",
@@ -700,14 +721,14 @@ def build_manifest(
                 file_artifact(
                     smartdns_repo,
                     smartdns["tag"],
-                    f"smartdns.{smartdns['version']}.x86_64-openwrt-all.apk",
+                    f"smartdns.{smartdns['version']}.x86_64-openwrt.apk",
                     smartdns["main_sha"],
                     f"smartdns-{smartdns_apk_version}.apk",
                 ),
                 file_artifact(
                     smartdns_repo,
                     smartdns["tag"],
-                    f"luci-app-smartdns.{smartdns['version']}.all-luci-all.apk",
+                    f"luci-app-smartdns.{smartdns['version']}.luci-all.apk",
                     smartdns["luci_sha"],
                     f"luci-app-smartdns-{smartdns_apk_version}.apk",
                 ),

@@ -1,34 +1,34 @@
 {
   "aurora": {
-    "config_sha": "a0ceb67e6827bb1d7cd88077c199c5f4ed03f1f4eafce192958e36dec6a6c70c",
-    "config_tag": "v1.0.0",
-    "config_version": "1.0.0-r20260619",
-    "i18n_sha": "7bd813c86bd115df94d90a7dabcbc071ef4ee463e33cfb25a5bffb42491b7170",
-    "i18n_version": "26.169.61452.cc474f9",
-    "theme_sha": "0537ddda8e83b4ab98ac1e8891cd5882003c1c265eea124d8a4fc663a4962c8b",
-    "theme_tag": "v1.0.0",
-    "theme_version": "1.0.0-r20260619"
+    "config_sha": "4f221411ebd9e1eb28829722a5f8d806cfca95101674d245253829661a8fcdc3",
+    "config_tag": "v0.3.0",
+    "config_version": "0.3.0-r20260208",
+    "i18n_sha": "d471416e34a7ece65fc728e2876f1d86f5002b04f9769a707089a55910a890ff",
+    "i18n_version": "26.037.70024.95fddff",
+    "theme_sha": "0e07aeb2d47273d15d6d499e037dac74089ddd500d13c004e636efd86bebccca",
+    "theme_tag": "v0.11.0",
+    "theme_version": "0.11.0-r20260208"
   },
   "bandix": {
-    "i18n_sha": "0f316a6b26816a2f2eb9e901d6d10e5aca5c55565830e3317c0671f2b10ce40a",
-    "i18n_version": "26.127.55408.c087ffa",
-    "luci_sha": "2dbc5d91658e0fff22ed9ff4f82d5aaa87f0a290682672971732d7b3e1f792d2",
-    "luci_tag": "v0.12.8",
-    "luci_version": "0.12.8-r1",
-    "main_sha": "d2bf69ab21a4a3e041120a55cab471bd172872b86b73a2478504727853a54819",
-    "tag": "v0.12.9",
-    "version": "0.12.9-r1"
+    "i18n_sha": "3df1cd2ef7a8a9c888cabc9d5c3f71dcb4719a486491b60158070c9e37d082b9",
+    "i18n_version": "26.068.39505.1002c41",
+    "luci_sha": "f0da4b13a50a243a5d92d4ad7d39e71bbb3378dfbe1824b184f382d67f08430c",
+    "luci_tag": "v0.12.6",
+    "luci_version": "0.12.6-r1",
+    "main_sha": "bce17c28dfd9c269facdbe3c91495435ebb2b677ef0f360b31c22d2cc0c049a2",
+    "tag": "v0.12.7",
+    "version": "0.12.7-r1"
   },
   "easytier": {
-    "archive_sha": "1ed886c4edb736e16d4b6064212d7c88dc95d2d898189f236c9ba0ce711deb44",
-    "i18n_name": "luci-i18n-easytier-zh-cn-26.136.03667~39d7eda.apk",
-    "i18n_sha": "b08e482f3e725b34c77ec33ed0cbcb209b2f5d57600619a3f8af6827f49e1cff",
-    "luci_name": "luci-app-easytier-2.6.4-r1.apk",
-    "luci_sha": "8d5fd568a73507b7aa2cee615dc35061f11d155f91f446633aa42905152c7368",
-    "main_name": "easytier-2.6.4.apk",
-    "main_sha": "4c4f5f6939760d37e81bf8453bae272631130f1ceadf4e56ff138ae6ac8c25ef",
-    "tag": "v2.6.4",
-    "version": "2.6.4"
+    "archive_sha": "8d15ef6d62a1f393537f96bc09cbb4cd5ad950ef6a6394bfeb978a2fdd269d2f",
+    "i18n_name": "luci-i18n-easytier-zh-cn-26.108.04894~f333f04.apk",
+    "i18n_sha": "7652194e939995ae31d330d874e60aaf9b25dc1d27c5cdb128f6e34bca0709e6",
+    "luci_name": "luci-app-easytier-2.6.0-r2.apk",
+    "luci_sha": "b97134cf583476fb7530cd86a781e9ee76b5a5362edad457adb72645f812f39f",
+    "main_name": "easytier-2.6.1.apk",
+    "main_sha": "f0dec9a5963cc6ea7d06d4ad3ff3e5d4df347eddca3988770975bac7b5ddfa5a",
+    "tag": "v2.6.1",
+    "version": "2.6.1"
   },
   "fakehttp": {
     "i18n_release": "r1",
@@ -45,34 +45,32 @@
     "i18n_version": "0",
     "luci_sha": "42822bf7457fb541a259c0ace945a3f0c19e701113c01d07f1d9afa3cb56a598",
     "luci_version": "2.2.2-r1",
-    "main_sha": "180ff9302886ad519ac11708dc7f3d6b6348155932dcbc12c72fc36c3d4b4a66",
-    "tag": "v3.0.0_beta6",
-    "version": "3.0.0_beta6-r1"
+    "main_sha": "141d49448fff081fa9aaefcb44c2ef47f660e1153203a729a5861ff2e66474b7",
+    "tag": "v2.27.2",
+    "version": "2.27.2-r1"
   },
   "nikki": {
     "apks": {
-      "luci-app-nikki-1.26.1-r1.apk": "e40bcd726d66a784b736d34df4c41993d865168322328c48856bfa77297b8bbd",
-      "luci-i18n-nikki-zh-cn-26.161.56550~95d41dd.apk": "98f7e75db41c108298b9d5623b6c1fe70a41440a57fef8a59dbe920f5049b4b8",
-      "mihomo-alpha-2026.06.10.apk": "bb4f8ba81f2c17424fa4bd5bfe8f49eca081c9651371b79f9befb2977ba3a424",
-      "mihomo-meta-1.19.27.apk": "4548f875ea0f9d386501dc90721166a039aa5a5c2dcb10cf3d3dbd0f327f29ea",
-      "nikki-2026.04.08-r1.apk": "e56cc70d5631cb5990530a450fa434543f3e9a0a5d76844e4108a8ae33b10077"
+      "luci-app-nikki-1.26.0-r1.apk": "1da947b8c911149d64f9dfd137d73363d7b692e026be6cc45b327f354e4c9675",
+      "luci-i18n-nikki-zh-cn-26.100.26541~bc29251.apk": "1d9c847bdc819f42d6697a1b5c1c2b9241da6f844f7e9197f41a3d37b382c182",
+      "nikki-2026.04.08-r1.apk": "bc1530588290b861f50ed03bd3f476504566549cf0a4046ac4955439d3c680b4"
     },
-    "archive_sha": "5903e6ac8d4f6d955d038e151d759990e6ae606240e46a3832ec56a47d6d0dfe",
+    "archive_sha": "7c1b21c4eea6fa29dca580ede2c7777f7cf6ac6c89ac90b1ed0edc3af2e9a53c",
     "openwrt_release": "25.12",
-    "tag": "v1.26.1"
+    "tag": "v1.26.0"
   },
   "rtp2httpd": {
-    "i18n_sha": "af3ba86ad8c323c49af6d1754aa39bdec36fd649bd07957358fcf7668f7789b1",
-    "luci_sha": "62f452b36254ca9e768ce3820c7814bdce43b592fdfef682ad44ab74a1837e34",
-    "main_sha": "6ba33e2e8316982d81441882addb87391d0a45935c16e6ecb1a90f24c11ce67e",
+    "i18n_sha": "712fe32b6d30b80f0719158f6c7252557c4dd496f0b420522c4701e45982286a",
+    "luci_sha": "1d76e0d6e8c7ff77b6651f353f84a576fd2c35e5dcf1f26ad1aab201adc0ed05",
+    "main_sha": "1c870a54502940cd893be5b10dcf7e17fb27ea924fa38a522e1f0dfbef4d10fd",
     "package_release": "r1",
-    "tag": "v3.14.3",
-    "version": "3.14.3"
+    "tag": "v3.11.0",
+    "version": "3.11.0"
   },
   "smartdns": {
-    "luci_sha": "33209bd0d64be5371b97d9d3c5e775fcb5172983d0f0e452e886142c753bf699",
-    "main_sha": "f467558dbc09020a6ecdbed90001daedf43c50819a4264da9eb5a4aa3372d0b3",
-    "tag": "Release48.2",
-    "version": "1.2026.06.28-1614"
+    "luci_sha": "162a653278ca627dbfb313b761aca685f2338ba1c03ab60c72291c881511a923",
+    "main_sha": "48a92a6290b7a7281b6269d08678eb89a64bc49b0dc4f49e7297e8d6e9dfda25",
+    "tag": "Release47.1",
+    "version": "1.2025.11.09-1443"
   }
 }
