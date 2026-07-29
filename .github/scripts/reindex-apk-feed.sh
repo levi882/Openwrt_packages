@@ -4,6 +4,8 @@ set -euo pipefail
 repo_dir="${1:?usage: reindex-apk-feed.sh <feed-dir>}"
 sdk_image="${SDK_IMAGE:-ghcr.io/openwrt/sdk:${OPENWRT_ARCH:-x86_64}-${OPENWRT_BRANCH:-openwrt-25.12}}"
 sdk_cache_dir="${SDK_CACHE_DIR:-.openwrt-sdk-cache/${OPENWRT_ARCH:-x86_64}-${OPENWRT_BRANCH:-openwrt-25.12}}"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+canonicalizer="${script_dir}/canonicalize-apk-filenames.py"
 
 [ -n "${PRIVATE_KEY:-}" ] || {
   echo "PRIVATE_KEY secret is required to sign packages.adb" >&2
@@ -15,7 +17,13 @@ sdk_cache_dir="${SDK_CACHE_DIR:-.openwrt-sdk-cache/${OPENWRT_ARCH:-x86_64}-${OPE
   exit 1
 }
 
+[ -f "$canonicalizer" ] || {
+  echo "APK filename canonicalizer not found: $canonicalizer" >&2
+  exit 1
+}
+
 repo_abs="$(realpath "$repo_dir")"
+canonicalizer_abs="$(realpath "$canonicalizer")"
 mkdir -p "$sdk_cache_dir"
 sdk_cache_abs="$(realpath "$sdk_cache_dir")"
 key_file="$(mktemp)"
@@ -35,6 +43,7 @@ docker run --rm \
   -v "${repo_abs}:/repo" \
   -v "${sdk_cache_abs}:/sdk-cache" \
   -v "${key_file}:/tmp/private-key.pem:ro" \
+  -v "${canonicalizer_abs}:/usr/local/bin/canonicalize-apk-filenames.py:ro" \
   "$sdk_image" \
   -lc '
     set -euo pipefail
@@ -56,11 +65,15 @@ docker run --rm \
       exit 1
     }
 
+    python3 /usr/local/bin/canonicalize-apk-filenames.py "$apk_bin" "${apks[@]}"
+    apks=(*.apk)
+
     rm -f packages.adb
     "$apk_bin" mkndx \
       --root /sdk-cache \
       --keys-dir /sdk-cache \
       --allow-untrusted \
+      --pkgname-spec "\${name}-\${version}.apk" \
       --sign /tmp/private-key.pem \
       --output packages.adb \
       "${apks[@]}"

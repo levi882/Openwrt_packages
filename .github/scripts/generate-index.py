@@ -8,7 +8,7 @@ def tree_lines(root):
     files = sorted(
         path.relative_to(root).as_posix()
         for path in root.rglob("*")
-        if path.is_file() and path.name != "index.html"
+        if path.is_file() and path.name not in ("index.html", "404.html")
     )
     lines = []
 
@@ -85,6 +85,23 @@ def main():
 <body>
   <h1>{html.escape(title)}</h1>
   <pre>{body}</pre>
+</body>
+</html>
+""",
+        encoding="utf-8",
+        newline="\n",
+    )
+    (root / "404.html").write_text(
+        """<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>404 Not Found</title>
+</head>
+<body>
+  <h1>404 Not Found</h1>
+  <p>The requested feed file does not exist.</p>
 </body>
 </html>
 """,
