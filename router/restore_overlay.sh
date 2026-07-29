@@ -727,13 +727,13 @@ IPTV_HA_EOF
 
     REMOVE_LIST=""
     for PKG in \$REMOVE_PKGS; do
-        apk info -e "\$PKG" >/dev/null 2>&1 || continue
+        apk --wait 300 info -e "\$PKG" >/dev/null 2>&1 || continue
         REMOVE_LIST="\$REMOVE_LIST \$PKG"
     done
 
     if [ -n "\$REMOVE_LIST" ]; then
         echo "apk del:\$REMOVE_LIST" >> "\$LOG"
-        apk del --force-broken-world \$REMOVE_LIST >> "\$LOG" 2>&1 || \
+        apk --wait 300 del --force-broken-world \$REMOVE_LIST >> "\$LOG" 2>&1 || \
             echo "WARNING: apk del returned non-zero" >> "\$LOG"
     else
         echo "no matching remove packages installed" >> "\$LOG"
@@ -754,31 +754,31 @@ IPTV_HA_EOF
             fi
 
             echo "apk update attempt \$ATTEMPT/12" >> "\$LOG"
-            if apk update >> "\$LOG" 2>&1; then
+            if apk --wait 300 update >> "\$LOG" 2>&1; then
                 FIX_LIST=""
                 for PKG in \$THEME_REPAIR_PKGS; do
-                    apk info -e "\$PKG" >/dev/null 2>&1 || continue
+                    apk --wait 300 info -e "\$PKG" >/dev/null 2>&1 || continue
                     FIX_LIST="\$FIX_LIST \$PKG"
                 done
                 if [ -n "\$FIX_LIST" ]; then
                     echo "apk fix --reinstall:\$FIX_LIST" >> "\$LOG"
-                    apk fix --reinstall \$FIX_LIST >> "\$LOG" 2>&1 || \
+                    apk --wait 300 fix --reinstall \$FIX_LIST >> "\$LOG" 2>&1 || \
                         echo "WARNING: apk fix returned non-zero" >> "\$LOG"
                 fi
                 REPAIR_INSTALL_LIST=""
                 for PKG in \$THEME_REPAIR_PKGS; do
-                    apk info -e "\$PKG" >/dev/null 2>&1 && continue
+                    apk --wait 300 info -e "\$PKG" >/dev/null 2>&1 && continue
                     REPAIR_INSTALL_LIST="\$REPAIR_INSTALL_LIST \$PKG"
                 done
                 if [ -n "\$REPAIR_INSTALL_LIST" ]; then
                     echo "best-effort theme apk add:\$REPAIR_INSTALL_LIST" >> "\$LOG"
-                    apk add --force-broken-world \$REPAIR_INSTALL_LIST >> "\$LOG" 2>&1 || \
+                    apk --wait 300 add --force-broken-world \$REPAIR_INSTALL_LIST >> "\$LOG" 2>&1 || \
                         echo "WARNING: best-effort theme install failed" >> "\$LOG"
                 fi
 
                 INSTALL_LIST=""
                 for PKG in \$INSTALL_PKGS; do
-                    apk info -e "\$PKG" >/dev/null 2>&1 && continue
+                    apk --wait 300 info -e "\$PKG" >/dev/null 2>&1 && continue
                     INSTALL_LIST="\$INSTALL_LIST \$PKG"
                 done
                 for PKG in \$MYFEED_INSTALL_PKGS; do
@@ -797,7 +797,7 @@ IPTV_HA_EOF
                 fi
                 if [ -n "\$OPTIONAL_INSTALL_LIST" ]; then
                     echo "best-effort myfeed apk add:\$OPTIONAL_INSTALL_LIST" >> "\$LOG"
-                    apk add --force-broken-world \$OPTIONAL_INSTALL_LIST >> "\$LOG" 2>&1 || \
+                    apk --wait 300 add --force-broken-world \$OPTIONAL_INSTALL_LIST >> "\$LOG" 2>&1 || \
                         echo "WARNING: best-effort myfeed install failed" >> "\$LOG"
                 fi
 
@@ -811,7 +811,7 @@ IPTV_HA_EOF
                     fi
                 else
                     echo "apk add:\$INSTALL_LIST" >> "\$LOG"
-                    if apk add --force-broken-world \$INSTALL_LIST >> "\$LOG" 2>&1; then
+                    if apk --wait 300 add --force-broken-world \$INSTALL_LIST >> "\$LOG" 2>&1; then
                         if [ "\$MYFEED_PENDING" = "1" ]; then
                             echo "official packages installed; myfeed packages still pending" >> "\$LOG"
                         else
