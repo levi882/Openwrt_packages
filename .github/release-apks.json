@@ -138,27 +138,27 @@
       "releases": [
         {
           "repository": "levi882/iptv",
-          "tag": "v0.1.0-r29"
+          "tag": "v0.1.0-r33"
         }
       ],
       "artifacts": [
         {
           "type": "file",
-          "url": "https://github.com/levi882/iptv/releases/download/v0.1.0-r29/iptv-refresh-0.1.0-r29.apk",
-          "sha256": "2b7d76f9ee6524f2f12067e588e908749324fa1fd57b8feb2e0410abb4023491",
-          "output": "iptv-refresh-0.1.0-r29.apk"
+          "url": "https://github.com/levi882/iptv/releases/download/v0.1.0-r33/iptv-refresh-0.1.0-r33.apk",
+          "sha256": "50b1aea6988731f1f55a8ec22e1fbfb513775ba51efa5c7d74fb6a3946b574df",
+          "output": "iptv-refresh-0.1.0-r33.apk"
         },
         {
           "type": "file",
-          "url": "https://github.com/levi882/iptv/releases/download/v0.1.0-r29/luci-app-iptv-refresh-0.1.0-r29.apk",
-          "sha256": "e64fe0dd20a5cd62dbc9866d84ddfc53b6a20eb66c085b8c44626ad702de09c6",
-          "output": "luci-app-iptv-refresh-0.1.0-r29.apk"
+          "url": "https://github.com/levi882/iptv/releases/download/v0.1.0-r33/luci-app-iptv-refresh-0.1.0-r33.apk",
+          "sha256": "8e0ddcf0db05172d120705df24d153df3207b64ee3f5f090a9df8a0144e8f9ec",
+          "output": "luci-app-iptv-refresh-0.1.0-r33.apk"
         },
         {
           "type": "file",
-          "url": "https://github.com/levi882/iptv/releases/download/v0.1.0-r29/luci-i18n-iptv-refresh-zh-cn-0.1.0-r29.apk",
-          "sha256": "ee9b98eb382eadd6517d1ab55d0b45bcdc27fd378244996cd26a2c18299cf0ff",
-          "output": "luci-i18n-iptv-refresh-zh-cn-0.1.0-r29.apk"
+          "url": "https://github.com/levi882/iptv/releases/download/v0.1.0-r33/luci-i18n-iptv-refresh-zh-cn-0.1.0-r33.apk",
+          "sha256": "b702a47f9cf033e04e95f8bb853f1ab2fa2e6f2e1afe42c538660bc98b2ceb1f",
+          "output": "luci-i18n-iptv-refresh-zh-cn-0.1.0-r33.apk"
         }
       ]
     },
@@ -272,21 +272,21 @@
       "releases": [
         {
           "repository": "PikuZheng/smartdns",
-          "tag": "1.2026.v48.3.0"
+          "tag": "1.2026.v48.3.3"
         }
       ],
       "artifacts": [
         {
           "type": "file",
-          "url": "https://github.com/PikuZheng/smartdns/releases/download/1.2026.v48.3.0/smartdns.1.2026.v48.3.0.x86_64-openwrt.apk",
-          "sha256": "53ef09d2b8d741ea6dc48257193d00d8695e32951600386b93b11ab1eaf57fbf",
-          "output": "smartdns-1.2026.v48.3.0.apk"
+          "url": "https://github.com/PikuZheng/smartdns/releases/download/1.2026.v48.3.3/smartdns.1.2026.v48.3.3.x86_64-openwrt.apk",
+          "sha256": "72c0d67e5003af2804869e138e49053126aecdd5fb496712d7584c3023b98c23",
+          "output": "smartdns-1.2026.v48.3.3.apk"
         },
         {
           "type": "file",
-          "url": "https://github.com/PikuZheng/smartdns/releases/download/1.2026.v48.3.0/luci-app-smartdns.1.2026.v48.3.0.luci-all.apk",
-          "sha256": "0f1b630e007cdf38543df7364560df3caaa26a91acaa14030079c3000b0d7173",
-          "output": "luci-app-smartdns-1.2026.v48.3.0.apk"
+          "url": "https://github.com/PikuZheng/smartdns/releases/download/1.2026.v48.3.3/luci-app-smartdns.1.2026.v48.3.3.luci-all.apk",
+          "sha256": "82e2b612d9175ee0c38280df5351a1519bd5f07306085f64f5d41a58f36eeb2c",
+          "output": "luci-app-smartdns-1.2026.v48.3.3.apk"
         }
       ]
     },
