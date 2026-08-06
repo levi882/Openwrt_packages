@@ -272,21 +272,21 @@
       "releases": [
         {
           "repository": "PikuZheng/smartdns",
-          "tag": "1.2026.v48.3.3"
+          "tag": "1.2026.v48.4.0"
         }
       ],
       "artifacts": [
         {
           "type": "file",
-          "url": "https://github.com/PikuZheng/smartdns/releases/download/1.2026.v48.3.3/smartdns.1.2026.v48.3.3.x86_64-openwrt.apk",
-          "sha256": "72c0d67e5003af2804869e138e49053126aecdd5fb496712d7584c3023b98c23",
-          "output": "smartdns-1.2026.v48.3.3.apk"
+          "url": "https://github.com/PikuZheng/smartdns/releases/download/1.2026.v48.4.0/smartdns.1.2026.v48.4.0.x86_64-openwrt.apk",
+          "sha256": "3df73f5bed9566ded52737f8d6c7eb9a31ab799c0645f2bee4a21713c7958d51",
+          "output": "smartdns-1.2026.v48.4.0.apk"
         },
         {
           "type": "file",
-          "url": "https://github.com/PikuZheng/smartdns/releases/download/1.2026.v48.3.3/luci-app-smartdns.1.2026.v48.3.3.luci-all.apk",
-          "sha256": "82e2b612d9175ee0c38280df5351a1519bd5f07306085f64f5d41a58f36eeb2c",
-          "output": "luci-app-smartdns-1.2026.v48.3.3.apk"
+          "url": "https://github.com/PikuZheng/smartdns/releases/download/1.2026.v48.4.0/luci-app-smartdns.1.2026.v48.4.0.luci-all.apk",
+          "sha256": "27cf2312a59a5aa1351f3f2c2819c1241ef7eef688076451ac7c94c382a3ddfc",
+          "output": "luci-app-smartdns-1.2026.v48.4.0.apk"
         }
       ]
     },
