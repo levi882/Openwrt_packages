@@ -273,8 +273,10 @@ def get_smartdns():
         main = None
         version = None
         for asset in release.get("assets", []):
+            # Deliberately exclude x86_64-openwrt.apk: that artifact is the
+            # static build and cannot load the SmartDNS WebUI plugin.
             match = re.fullmatch(
-                r"smartdns\.(?P<version>.+)\.x86_64-openwrt\.apk",
+                r"smartdns\.(?P<version>.+)\.x86_64\.apk",
                 asset["name"],
             )
             if match:
@@ -296,6 +298,8 @@ def get_smartdns():
         return {
             "tag": release["tag_name"],
             "version": version,
+            "main_name": main["name"],
+            "luci_name": luci["name"],
             "main_sha": sha256(download_asset(main)),
             "luci_sha": sha256(download_asset(luci)),
         }
@@ -721,14 +725,14 @@ def build_manifest(
                 file_artifact(
                     smartdns_repo,
                     smartdns["tag"],
-                    f"smartdns.{smartdns['version']}.x86_64-openwrt.apk",
+                    smartdns["main_name"],
                     smartdns["main_sha"],
                     f"smartdns-{smartdns_apk_version}.apk",
                 ),
                 file_artifact(
                     smartdns_repo,
                     smartdns["tag"],
-                    f"luci-app-smartdns.{smartdns['version']}.luci-all.apk",
+                    smartdns["luci_name"],
                     smartdns["luci_sha"],
                     f"luci-app-smartdns-{smartdns_apk_version}.apk",
                 ),
