@@ -719,6 +719,38 @@ IPTV_HA_EOF
         done
     }
 
+    restart_smartdns_after_install() {
+        case " \$KEEP_RUNTIME_PKGS " in
+            *" smartdns "*) ;;
+            *) return 0 ;;
+        esac
+        apk --wait 300 info -e smartdns >/dev/null 2>&1 || return 0
+        [ -x /etc/init.d/smartdns ] || return 0
+
+        if ! command -v uci >/dev/null 2>&1 || \
+           [ "\$(uci -q get smartdns.@smartdns[0].enabled)" != "1" ]; then
+            echo "SmartDNS is disabled in UCI; skip post-install restart" >> "\$LOG"
+            return 0
+        fi
+
+        if [ "\$(uci -q get smartdns.@smartdns[0].ui)" = "1" ] && \
+           [ ! -s /usr/lib/smartdns_ui.so ]; then
+            echo "ERROR: SmartDNS WebUI is enabled, but smartdns_ui.so is missing" >> "\$LOG"
+        fi
+
+        echo "restarting SmartDNS after package installation" >> "\$LOG"
+        SMARTDNS_RESTARTED=1
+        /etc/init.d/smartdns restart >> "\$LOG" 2>&1 || SMARTDNS_RESTARTED=0
+        sleep 2
+        if [ "\$SMARTDNS_RESTARTED" != "1" ] || ! pidof smartdns >/dev/null 2>&1; then
+            echo "WARNING: SmartDNS stopped after its post-install restart" >> "\$LOG"
+            echo "Recent SmartDNS system log follows:" >> "\$LOG"
+            logread -e smartdns 2>/dev/null | tail -n 80 >> "\$LOG" || true
+        else
+            echo "SmartDNS is running after package installation" >> "\$LOG"
+        fi
+    }
+
     start_kept_runtime
     sleep 5
     dedupe_apk_repo_files
@@ -831,6 +863,8 @@ IPTV_HA_EOF
 
     restore_iptv_refresh_service >> "\$LOG" 2>&1 || \
         echo "WARNING: failed to restore packaged iptv-refresh" >> "\$LOG"
+
+    restart_smartdns_after_install
 
     repair_luci_theme_config >> "\$LOG" 2>&1 || \
         echo "WARNING: failed to repair luci theme config after package actions" >> "\$LOG"
