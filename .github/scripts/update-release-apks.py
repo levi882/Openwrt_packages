@@ -266,46 +266,60 @@ def get_iptv():
     }
 
 
-def get_smartdns():
-    repo = "PikuZheng/smartdns"
-    releases = releases_list(repo)
+def select_smartdns_assets(releases):
+    luci_by_version = {}
     for release in releases:
-        main = None
-        version = None
         for asset in release.get("assets", []):
-            # Deliberately exclude x86_64-openwrt.apk: that artifact is the
-            # static build and cannot load the SmartDNS WebUI plugin.
             match = re.fullmatch(
-                r"smartdns\.(?P<version>.+)\.x86_64\.apk",
+                r"luci-app-smartdns\.(?P<version>.+)\.luci-all\.apk",
                 asset["name"],
             )
-            if match:
-                main = asset
-                version = match.group("version")
-                break
-        if main is None:
-            continue
-        luci = None
-        for asset in release.get("assets", []):
-            if re.fullmatch(
-                rf"luci-app-smartdns\.{re.escape(version)}\.luci-all\.apk",
-                asset["name"],
-            ):
-                luci = asset
-                break
-        if luci is None:
-            continue
-        return {
-            "tag": release["tag_name"],
-            "version": version,
-            "main_name": main["name"],
-            "luci_name": luci["name"],
-            "main_sha": sha256(download_asset(main)),
-            "luci_sha": sha256(download_asset(luci)),
-        }
-    raise SystemExit(
-        f"No {repo} release found with both daemon and LuCI APK assets"
-    )
+            if match and match.group("version") not in luci_by_version:
+                luci_by_version[match.group("version")] = (release, asset)
+
+    # GitHub returns releases newest first. SmartDNS publishes the daemon with
+    # its loadable WebUI plugin in a separate *_with_ui release, while the
+    # matching LuCI package is in the ordinary release for the same version.
+    for main_release in releases:
+        for main in main_release.get("assets", []):
+            # Deliberately exclude x86_64-openwrt.apk: that artifact is a
+            # static executable and cannot load smartdns_ui.so when a restored
+            # configuration has the built-in WebUI enabled.
+            match = re.fullmatch(
+                r"smartdns\.(?P<version>.+)\.x86_64\.apk",
+                main["name"],
+            )
+            if not match:
+                continue
+
+            version = match.group("version")
+            luci_match = luci_by_version.get(version)
+            if luci_match is None:
+                continue
+            luci_release, luci = luci_match
+            return main_release, main, luci_release, luci, version
+
+    return None
+
+
+def get_smartdns():
+    repo = "PikuZheng/smartdns"
+    selected = select_smartdns_assets(releases_list(repo))
+    if selected is None:
+        raise SystemExit(
+            f"No {repo} releases found with matching WebUI daemon and LuCI APK assets"
+        )
+
+    main_release, main, luci_release, luci, version = selected
+    return {
+        "main_tag": main_release["tag_name"],
+        "luci_tag": luci_release["tag_name"],
+        "version": version,
+        "main_name": main["name"],
+        "luci_name": luci["name"],
+        "main_sha": sha256(download_asset(main)),
+        "luci_sha": sha256(download_asset(luci)),
+    }
 
 
 def get_temp_status():
@@ -720,18 +734,21 @@ def build_manifest(
     packages.append(
         {
             "id": "smartdns",
-            "releases": [release_ref(smartdns_repo, smartdns["tag"])],
+            "releases": [
+                release_ref(smartdns_repo, smartdns["main_tag"]),
+                release_ref(smartdns_repo, smartdns["luci_tag"]),
+            ],
             "artifacts": [
                 file_artifact(
                     smartdns_repo,
-                    smartdns["tag"],
+                    smartdns["main_tag"],
                     smartdns["main_name"],
                     smartdns["main_sha"],
                     f"smartdns-{smartdns_apk_version}.apk",
                 ),
                 file_artifact(
                     smartdns_repo,
-                    smartdns["tag"],
+                    smartdns["luci_tag"],
                     smartdns["luci_name"],
                     smartdns["luci_sha"],
                     f"luci-app-smartdns-{smartdns_apk_version}.apk",
@@ -809,6 +826,10 @@ def main():
             continue
         if name == "Aurora":
             print(f"{name}: theme {data['theme_tag']}, config {data['config_tag']}")
+        elif name == "SmartDNS":
+            print(
+                f"{name}: daemon {data['main_tag']}, LuCI {data['luci_tag']}"
+            )
         else:
             print(f"{name}: {data['tag']}")
 

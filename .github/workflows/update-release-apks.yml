@@ -25,6 +25,9 @@ jobs:
       - name: save current release APK manifest
         run: cp .github/release-apks.json "${RUNNER_TEMP}/release-apks.before.json"
 
+      - name: test release updater
+        run: python3 -m unittest discover -s .github/scripts -p 'test_*.py'
+
       - name: update release APK manifest
         run: python3 .github/scripts/update-release-apks.py
         env:
