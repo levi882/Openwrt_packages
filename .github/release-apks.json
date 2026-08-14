@@ -134,6 +134,38 @@
       ]
     },
     {
+      "id": "homebox",
+      "releases": [
+        {
+          "repository": "levi882/homebox",
+          "tag": "v0.1.4"
+        }
+      ],
+      "metadata": {
+        "openwrt_release": "25.12.5"
+      },
+      "artifacts": [
+        {
+          "type": "file",
+          "url": "https://github.com/levi882/homebox/releases/download/v0.1.4/homebox-0.1.4-r1-openwrt-25.12.5-x86_64.apk",
+          "sha256": "48a72f35585b9ddc372965c97858d3d70af3d1425095b95469b49c892a445b04",
+          "output": "homebox-0.1.4-r1.apk"
+        },
+        {
+          "type": "file",
+          "url": "https://github.com/levi882/homebox/releases/download/v0.1.4/luci-app-homebox-0.1.4-openwrt-25.12.5-x86_64.apk",
+          "sha256": "90500ba673c510c5c9475d630869d7a5a59d716e459ed831b92e8270c2bf3ac0",
+          "output": "luci-app-homebox-0.1.4.apk"
+        },
+        {
+          "type": "file",
+          "url": "https://github.com/levi882/homebox/releases/download/v0.1.4/luci-i18n-homebox-zh-cn-0.1.4-openwrt-25.12.5-x86_64.apk",
+          "sha256": "4c71272d12bfd978cd565ffa88d26ca33c4444a9314b83399c70f85f1a88437d",
+          "output": "luci-i18n-homebox-zh-cn-0.1.4.apk"
+        }
+      ]
+    },
+    {
       "id": "iptv",
       "releases": [
         {

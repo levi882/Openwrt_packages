@@ -3,7 +3,7 @@ set -e
 
 BACKUP_FILE="$1"
 RESTORE_KEEP_EXTROOT="${RESTORE_KEEP_EXTROOT:-0}"
-DEFAULT_KEEP_RUNTIME_PACKAGES="smartdns nikki rtp2httpd iptv-refresh"
+DEFAULT_KEEP_RUNTIME_PACKAGES="homebox smartdns nikki rtp2httpd iptv-refresh"
 RESTORE_KEEP_RUNTIME_PACKAGES="${RESTORE_KEEP_RUNTIME_PACKAGES-$DEFAULT_KEEP_RUNTIME_PACKAGES}"
 RESTORE_MYFEED_BASE="${RESTORE_MYFEED_BASE:-https://openwrt-packages.pages.dev}"
 RESTORE_MYFEED_REPO="${RESTORE_MYFEED_REPO:-$RESTORE_MYFEED_BASE/openwrt-25.12/x86_64/myfeed/packages.adb}"
@@ -21,7 +21,7 @@ RESTORE_IPTV_NGINX_ALLOW_IPS="${RESTORE_IPTV_NGINX_ALLOW_IPS:-10.1.1.0/24 127.0.
 RESTORE_HA_CONFIG_ROOT="${RESTORE_HA_CONFIG_ROOT:-/mnt/sda1/Configs/HomeAssistant}"
 RESTORE_THEME_PACKAGES=""
 RESTORE_THEME_REPAIR_PACKAGES=""
-DEFAULT_MYFEED_INSTALL_PACKAGES="luci-theme-aurora luci-app-aurora-config luci-i18n-aurora-config-zh-cn bandix luci-app-bandix luci-i18n-bandix-zh-cn easytier luci-app-easytier luci-i18n-easytier-zh-cn lucky luci-app-lucky luci-i18n-lucky-zh-cn nikki luci-app-nikki luci-i18n-nikki-zh-cn rtp2httpd luci-app-rtp2httpd luci-i18n-rtp2httpd-zh-cn smartdns luci-app-smartdns luci-app-temp-status luci-i18n-temp-status-zh-cn"
+DEFAULT_MYFEED_INSTALL_PACKAGES="luci-theme-aurora luci-app-aurora-config luci-i18n-aurora-config-zh-cn bandix luci-app-bandix luci-i18n-bandix-zh-cn easytier luci-app-easytier luci-i18n-easytier-zh-cn homebox luci-app-homebox luci-i18n-homebox-zh-cn lucky luci-app-lucky luci-i18n-lucky-zh-cn nikki luci-app-nikki luci-i18n-nikki-zh-cn rtp2httpd luci-app-rtp2httpd luci-i18n-rtp2httpd-zh-cn smartdns luci-app-smartdns luci-app-temp-status luci-i18n-temp-status-zh-cn"
 RESTORE_MYFEED_INSTALL_PACKAGES="${RESTORE_MYFEED_INSTALL_PACKAGES-$DEFAULT_MYFEED_INSTALL_PACKAGES}"
 DEFAULT_MYFEED_OPTIONAL_INSTALL_PACKAGES="iptv-refresh luci-app-iptv-refresh luci-i18n-iptv-refresh-zh-cn"
 RESTORE_MYFEED_OPTIONAL_INSTALL_PACKAGES="${RESTORE_MYFEED_OPTIONAL_INSTALL_PACKAGES-$DEFAULT_MYFEED_OPTIONAL_INSTALL_PACKAGES}"
@@ -751,6 +751,22 @@ IPTV_HA_EOF
         fi
     }
 
+    restart_homebox_after_install() {
+        apk --wait 300 info -e homebox >/dev/null 2>&1 || return 0
+        [ -x /etc/init.d/homebox ] || return 0
+
+        if ! command -v uci >/dev/null 2>&1 || \
+           [ "\$(uci -q get homebox.main.enabled)" != "1" ]; then
+            echo "Homebox is disabled in UCI; skip post-install restart" >> "\$LOG"
+            return 0
+        fi
+
+        echo "restarting Homebox after package installation" >> "\$LOG"
+        /etc/init.d/homebox enable >> "\$LOG" 2>&1 || true
+        /etc/init.d/homebox restart >> "\$LOG" 2>&1 || \
+            echo "WARNING: failed to restart Homebox" >> "\$LOG"
+    }
+
     start_kept_runtime
     sleep 5
     dedupe_apk_repo_files
@@ -865,6 +881,8 @@ IPTV_HA_EOF
         echo "WARNING: failed to restore packaged iptv-refresh" >> "\$LOG"
 
     restart_smartdns_after_install
+
+    restart_homebox_after_install
 
     repair_luci_theme_config >> "\$LOG" 2>&1 || \
         echo "WARNING: failed to repair luci theme config after package actions" >> "\$LOG"

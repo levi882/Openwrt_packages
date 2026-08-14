@@ -20,6 +20,35 @@ def release(tag, *asset_names):
     }
 
 
+class SelectHomeboxAssetsTests(unittest.TestCase):
+    def test_selects_matching_x86_64_openwrt_apks(self):
+        candidate = release(
+            "v0.1.4",
+            "homebox-0.1.4-r1-openwrt-25.12.5-aarch64_generic.apk",
+            "homebox-0.1.4-r1-openwrt-25.12.5-x86_64.apk",
+            "luci-app-homebox-0.1.4-openwrt-25.12.5-x86_64.apk",
+            "luci-i18n-homebox-zh-cn-0.1.4-openwrt-25.12.5-x86_64.apk",
+        )
+
+        main, luci, i18n, version, package_release, openwrt_release = (
+            UPDATER.select_homebox_assets(candidate)
+        )
+
+        self.assertEqual(
+            main["name"], "homebox-0.1.4-r1-openwrt-25.12.5-x86_64.apk"
+        )
+        self.assertEqual(
+            luci["name"], "luci-app-homebox-0.1.4-openwrt-25.12.5-x86_64.apk"
+        )
+        self.assertEqual(
+            i18n["name"],
+            "luci-i18n-homebox-zh-cn-0.1.4-openwrt-25.12.5-x86_64.apk",
+        )
+        self.assertEqual(version, "0.1.4")
+        self.assertEqual(package_release, "r1")
+        self.assertEqual(openwrt_release, "25.12.5")
+
+
 class SelectSmartdnsAssetsTests(unittest.TestCase):
     def test_pairs_webui_daemon_and_luci_across_releases(self):
         releases = [

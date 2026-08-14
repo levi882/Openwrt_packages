@@ -9,8 +9,8 @@ https://openwrt-packages.pages.dev/openwrt-25.12/x86_64/myfeed/packages.adb
 ```
 
 It currently carries personal-use packages such as Aurora theme, Bandix,
-EasyTier, Lucky, Nikki, rtp2httpd, SmartDNS, and temp-status plus their LuCI
-packages where available. IPTV Refresh joins automatically after its first
+EasyTier, Homebox, Lucky, Nikki, rtp2httpd, SmartDNS, and temp-status plus their
+LuCI packages where available. IPTV Refresh joins automatically after its first
 tagged Release is published.
 
 ## Build
