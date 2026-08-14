@@ -229,6 +229,48 @@ def get_fakehttp():
     }
 
 
+def select_homebox_assets(release):
+    main, main_match = pick_asset(
+        release,
+        r"homebox-(?P<version>.+)-(?P<package_release>r\d+)-openwrt-(?P<openwrt_release>[^-]+)-x86_64\.apk",
+        "Homebox x86_64 APK",
+    )
+    version = main_match.group("version")
+    package_release = main_match.group("package_release")
+    openwrt_release = main_match.group("openwrt_release")
+    suffix = f"openwrt-{openwrt_release}-x86_64.apk"
+    luci, _ = pick_asset(
+        release,
+        rf"luci-app-homebox-{re.escape(version)}-{re.escape(suffix)}",
+        "Homebox LuCI APK",
+    )
+    i18n, _ = pick_asset(
+        release,
+        rf"luci-i18n-homebox-zh-cn-{re.escape(version)}-{re.escape(suffix)}",
+        "Homebox zh-cn APK",
+    )
+    return main, luci, i18n, version, package_release, openwrt_release
+
+
+def get_homebox():
+    release = latest_release("levi882/homebox")
+    main, luci, i18n, version, package_release, openwrt_release = (
+        select_homebox_assets(release)
+    )
+    return {
+        "tag": release["tag_name"],
+        "openwrt_release": openwrt_release,
+        "version": version,
+        "package_release": package_release,
+        "main_name": main["name"],
+        "main_sha": sha256(download_asset(main)),
+        "luci_name": luci["name"],
+        "luci_sha": sha256(download_asset(luci)),
+        "i18n_name": i18n["name"],
+        "i18n_sha": sha256(download_asset(i18n)),
+    }
+
+
 def get_iptv():
     try:
         release = latest_release("levi882/iptv")
@@ -485,6 +527,7 @@ def build_manifest(
     bandix,
     easytier,
     fakehttp,
+    homebox,
     iptv,
     lucky,
     nikki,
@@ -612,6 +655,38 @@ def build_manifest(
                     f"{fakehttp_prefix}-luci-i18n-fakehttp-zh-cn-{fakehttp['version']}-{fakehttp['i18n_release']}.apk",
                     fakehttp["i18n_sha"],
                     f"luci-i18n-fakehttp-zh-cn-{fakehttp['version']}-{fakehttp['i18n_release']}.apk",
+                ),
+            ],
+        }
+    )
+
+    homebox_repo = "levi882/homebox"
+    packages.append(
+        {
+            "id": "homebox",
+            "releases": [release_ref(homebox_repo, homebox["tag"])],
+            "metadata": {"openwrt_release": homebox["openwrt_release"]},
+            "artifacts": [
+                file_artifact(
+                    homebox_repo,
+                    homebox["tag"],
+                    homebox["main_name"],
+                    homebox["main_sha"],
+                    f"homebox-{homebox['version']}-{homebox['package_release']}.apk",
+                ),
+                file_artifact(
+                    homebox_repo,
+                    homebox["tag"],
+                    homebox["luci_name"],
+                    homebox["luci_sha"],
+                    f"luci-app-homebox-{homebox['version']}.apk",
+                ),
+                file_artifact(
+                    homebox_repo,
+                    homebox["tag"],
+                    homebox["i18n_name"],
+                    homebox["i18n_sha"],
+                    f"luci-i18n-homebox-zh-cn-{homebox['version']}.apk",
                 ),
             ],
         }
@@ -789,6 +864,7 @@ def main():
     easytier = get_easytier()
     rtp2httpd = get_rtp2httpd()
     fakehttp = get_fakehttp()
+    homebox = get_homebox()
     iptv = get_iptv()
     smartdns = get_smartdns()
     temp_status = get_temp_status()
@@ -801,6 +877,7 @@ def main():
             bandix,
             easytier,
             fakehttp,
+            homebox,
             iptv,
             lucky,
             nikki,
@@ -816,6 +893,7 @@ def main():
         ("EasyTier", easytier),
         ("rtp2httpd", rtp2httpd),
         ("FakeHTTP", fakehttp),
+        ("Homebox", homebox),
         ("IPTV", iptv),
         ("SmartDNS", smartdns),
         ("temp-status", temp_status),
