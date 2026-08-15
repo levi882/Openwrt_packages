@@ -6,31 +6,31 @@
       "releases": [
         {
           "repository": "eamonxg/luci-theme-aurora",
-          "tag": "v1.1.0"
+          "tag": "v1.2.0"
         },
         {
           "repository": "eamonxg/luci-app-aurora-config",
-          "tag": "v1.1.0"
+          "tag": "v1.2.0"
         }
       ],
       "artifacts": [
         {
           "type": "file",
-          "url": "https://github.com/eamonxg/luci-theme-aurora/releases/download/v1.1.0/luci-theme-aurora-1.1.0-r20260711.apk",
-          "sha256": "f0298a276b6c84dab09753eafa0eab05a38ebc19f1928174fa2222e16ab4c4d1",
-          "output": "luci-theme-aurora-1.1.0-r20260711.apk"
+          "url": "https://github.com/eamonxg/luci-theme-aurora/releases/download/v1.2.0/luci-theme-aurora-1.2.0-r20260808.apk",
+          "sha256": "ac0cb9e4f811e6b84d34ae8c3b314ca94a5e0c2c57bf5ce9f6833aa9ed76e28c",
+          "output": "luci-theme-aurora-1.2.0-r20260808.apk"
         },
         {
           "type": "file",
-          "url": "https://github.com/eamonxg/luci-app-aurora-config/releases/download/v1.1.0/luci-app-aurora-config-1.1.0-r20260711.apk",
-          "sha256": "4ec28968c0b205bf29db6561b2bf65bd322f02e9b1c04babeaac11f29c3e6063",
-          "output": "luci-app-aurora-config-1.1.0-r20260711.apk"
+          "url": "https://github.com/eamonxg/luci-app-aurora-config/releases/download/v1.2.0/luci-app-aurora-config-1.2.0-r20260808.apk",
+          "sha256": "3cd4a8637da18a6f408a8b711b4aa5ea52ef02ffef65988be3298eb2d90419a5",
+          "output": "luci-app-aurora-config-1.2.0-r20260808.apk"
         },
         {
           "type": "file",
-          "url": "https://github.com/eamonxg/luci-app-aurora-config/releases/download/v1.1.0/luci-i18n-aurora-config-zh-cn-26.192.49224.6b21ba7.apk",
-          "sha256": "956d24703cbb81d5c9f144974b6a8a6f294c8e8d246ff96ac2e9d006168a4e19",
-          "output": "luci-i18n-aurora-config-zh-cn-26.192.49224~6b21ba7.apk"
+          "url": "https://github.com/eamonxg/luci-app-aurora-config/releases/download/v1.2.0/luci-i18n-aurora-config-zh-cn-26.220.23245.28c257b.apk",
+          "sha256": "54196b622771664164a8b2fa9862e0909e1beec8107b777a508e1ba25d243d5c",
+          "output": "luci-i18n-aurora-config-zh-cn-26.220.23245~28c257b.apk"
         }
       ]
     },
@@ -43,7 +43,7 @@
         },
         {
           "repository": "timsaya/luci-app-bandix",
-          "tag": "v0.12.8"
+          "tag": "v0.12.9"
         }
       ],
       "artifacts": [
@@ -55,15 +55,15 @@
         },
         {
           "type": "file",
-          "url": "https://github.com/timsaya/luci-app-bandix/releases/download/v0.12.8/luci-app-bandix-0.12.8-r1_all.apk",
-          "sha256": "2dbc5d91658e0fff22ed9ff4f82d5aaa87f0a290682672971732d7b3e1f792d2",
-          "output": "luci-app-bandix-0.12.8-r1.apk"
+          "url": "https://github.com/timsaya/luci-app-bandix/releases/download/v0.12.9/luci-app-bandix-0.12.9-r1_all.apk",
+          "sha256": "621907d00ec44033e40c669aa7b40837a41822870d463ea7fe6393cf7137e4f6",
+          "output": "luci-app-bandix-0.12.9-r1.apk"
         },
         {
           "type": "file",
-          "url": "https://github.com/timsaya/luci-app-bandix/releases/download/v0.12.8/luci-i18n-bandix-zh-cn-26.127.55408.c087ffa_all.apk",
-          "sha256": "0f316a6b26816a2f2eb9e901d6d10e5aca5c55565830e3317c0671f2b10ce40a",
-          "output": "luci-i18n-bandix-zh-cn-26.127.55408~c087ffa.apk"
+          "url": "https://github.com/timsaya/luci-app-bandix/releases/download/v0.12.9/luci-i18n-bandix-zh-cn-26.224.57783.7b7762a_all.apk",
+          "sha256": "6bcc5b751e24916d2dcb29259bc6c600687ea758080bcfc02886d94c5cc0ab87",
+          "output": "luci-i18n-bandix-zh-cn-26.224.57783~7b7762a.apk"
         }
       ]
     },
