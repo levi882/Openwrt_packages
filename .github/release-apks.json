@@ -43,7 +43,7 @@
         },
         {
           "repository": "timsaya/luci-app-bandix",
-          "tag": "v0.12.9"
+          "tag": "v0.12.10"
         }
       ],
       "artifacts": [
@@ -55,15 +55,15 @@
         },
         {
           "type": "file",
-          "url": "https://github.com/timsaya/luci-app-bandix/releases/download/v0.12.9/luci-app-bandix-0.12.9-r1_all.apk",
-          "sha256": "621907d00ec44033e40c669aa7b40837a41822870d463ea7fe6393cf7137e4f6",
-          "output": "luci-app-bandix-0.12.9-r1.apk"
+          "url": "https://github.com/timsaya/luci-app-bandix/releases/download/v0.12.10/luci-app-bandix-0.12.10-r1_all.apk",
+          "sha256": "aff5e80d1b913375988606985a1c93d15107d627aa3580231012d66f602dc49a",
+          "output": "luci-app-bandix-0.12.10-r1.apk"
         },
         {
           "type": "file",
-          "url": "https://github.com/timsaya/luci-app-bandix/releases/download/v0.12.9/luci-i18n-bandix-zh-cn-26.224.57783.7b7762a_all.apk",
-          "sha256": "6bcc5b751e24916d2dcb29259bc6c600687ea758080bcfc02886d94c5cc0ab87",
-          "output": "luci-i18n-bandix-zh-cn-26.224.57783~7b7762a.apk"
+          "url": "https://github.com/timsaya/luci-app-bandix/releases/download/v0.12.10/luci-i18n-bandix-zh-cn-26.230.00908.d899c02_all.apk",
+          "sha256": "93ede94f9d183604a751de77be35b34d0b09f77941d1cadb11950222bff2b7ae",
+          "output": "luci-i18n-bandix-zh-cn-26.230.00908~d899c02.apk"
         }
       ]
     },
@@ -275,27 +275,27 @@
       "releases": [
         {
           "repository": "stackia/rtp2httpd",
-          "tag": "v3.15.3"
+          "tag": "v3.16.0"
         }
       ],
       "artifacts": [
         {
           "type": "file",
-          "url": "https://github.com/stackia/rtp2httpd/releases/download/v3.15.3/rtp2httpd-3.15.3-r1_x86_64.apk",
-          "sha256": "0c7ea4cad8ddb0da07db4b21aaba7bd28e5ccf5a0f5e6ee89e33cdad63955aba",
-          "output": "rtp2httpd-3.15.3-r1.apk"
+          "url": "https://github.com/stackia/rtp2httpd/releases/download/v3.16.0/rtp2httpd-3.16.0-r1_x86_64.apk",
+          "sha256": "23d744d312a42174c3e6972643a406cf99cc347cf1e74a785b6d616493dfc086",
+          "output": "rtp2httpd-3.16.0-r1.apk"
         },
         {
           "type": "file",
-          "url": "https://github.com/stackia/rtp2httpd/releases/download/v3.15.3/luci-app-rtp2httpd-3.15.3-r1.apk",
-          "sha256": "501aaff0ba0ae11d56d7ba5a806dd324ecd80e6e6405e2d68f5a041a0a2e044b",
-          "output": "luci-app-rtp2httpd-3.15.3-r1.apk"
+          "url": "https://github.com/stackia/rtp2httpd/releases/download/v3.16.0/luci-app-rtp2httpd-3.16.0-r1.apk",
+          "sha256": "8996f3d7b29901b147a7a8e2aca53557f28616c38a721e23c7c1cef7653925c1",
+          "output": "luci-app-rtp2httpd-3.16.0-r1.apk"
         },
         {
           "type": "file",
-          "url": "https://github.com/stackia/rtp2httpd/releases/download/v3.15.3/luci-i18n-rtp2httpd-zh-cn-3.15.3.apk",
-          "sha256": "3a03beaf51c4cb9d12beca89af5ea17680542e8038447331ffbf4929c1bfe2e7",
-          "output": "luci-i18n-rtp2httpd-zh-cn-3.15.3.apk"
+          "url": "https://github.com/stackia/rtp2httpd/releases/download/v3.16.0/luci-i18n-rtp2httpd-zh-cn-3.16.0.apk",
+          "sha256": "676c258c0de345018e617e818bccf7493848fd03bc4f0edf380f5d4e7cddc5a5",
+          "output": "luci-i18n-rtp2httpd-zh-cn-3.16.0.apk"
         }
       ]
     },
