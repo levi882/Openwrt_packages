@@ -227,8 +227,8 @@
       "id": "nikki",
       "releases": [
         {
-          "repository": "morytyann/OpenWrt-nikki",
-          "tag": "v1.26.1"
+          "repository": "levi882/OpenWrt-nikki",
+          "tag": "v1.26.2"
         }
       ],
       "metadata": {
@@ -238,33 +238,28 @@
         {
           "type": "archive",
           "format": "tar.gz",
-          "url": "https://github.com/morytyann/OpenWrt-nikki/releases/download/v1.26.1/nikki_x86_64-openwrt-25.12.tar.gz",
-          "sha256": "5903e6ac8d4f6d955d038e151d759990e6ae606240e46a3832ec56a47d6d0dfe",
+          "url": "https://github.com/levi882/OpenWrt-nikki/releases/download/v1.26.2/nikki_x86_64-openwrt-25.12.tar.gz",
+          "sha256": "edc19f4288fb721789a79f8fb4bf4ce23734017915d38776056912d04d8a8850",
           "files": [
             {
-              "source": "luci-app-nikki-1.26.1-r1.apk",
-              "sha256": "e40bcd726d66a784b736d34df4c41993d865168322328c48856bfa77297b8bbd",
-              "output": "luci-app-nikki-1.26.1-r1.apk"
+              "source": "luci-app-nikki-1.26.2-r3.apk",
+              "sha256": "98217eec471a067de0941b5fd17cbe7e96c8f8405b6c4165cb1e598c4afee6e4",
+              "output": "luci-app-nikki-1.26.2-r3.apk"
             },
             {
-              "source": "luci-i18n-nikki-zh-cn-26.161.56550~95d41dd.apk",
-              "sha256": "98f7e75db41c108298b9d5623b6c1fe70a41440a57fef8a59dbe920f5049b4b8",
-              "output": "luci-i18n-nikki-zh-cn-26.161.56550~95d41dd.apk"
+              "source": "luci-i18n-nikki-zh-cn-26.237.11781~24ce944.apk",
+              "sha256": "2278e5d83f36c18d594e0da6a76e4df988789d114775c38fd64b46c78c347349",
+              "output": "luci-i18n-nikki-zh-cn-26.237.11781~24ce944.apk"
             },
             {
-              "source": "mihomo-alpha-2026.06.10.apk",
-              "sha256": "bb4f8ba81f2c17424fa4bd5bfe8f49eca081c9651371b79f9befb2977ba3a424",
-              "output": "mihomo-alpha-2026.06.10.apk"
+              "source": "mihomo-meta-1.19.30.apk",
+              "sha256": "9ca2c0146d5b1b80a35f9509f5f0a8bf17025a5751c1247d137fcf79b4cdfc7c",
+              "output": "mihomo-meta-1.19.30.apk"
             },
             {
-              "source": "mihomo-meta-1.19.27.apk",
-              "sha256": "4548f875ea0f9d386501dc90721166a039aa5a5c2dcb10cf3d3dbd0f327f29ea",
-              "output": "mihomo-meta-1.19.27.apk"
-            },
-            {
-              "source": "nikki-2026.04.08-r1.apk",
-              "sha256": "e56cc70d5631cb5990530a450fa434543f3e9a0a5d76844e4108a8ae33b10077",
-              "output": "nikki-2026.04.08-r1.apk"
+              "source": "nikki-2026.04.08-r7.apk",
+              "sha256": "664122efb3526bc4c0f7f2ca1aaec920396c1f85fd8e24e2863ff2123be2a846",
+              "output": "nikki-2026.04.08-r7.apk"
             }
           ]
         }

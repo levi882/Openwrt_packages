@@ -421,7 +421,7 @@ def get_nikki():
     openwrt_release = os.environ.get("NIKKI_OPENWRT_RELEASE")
     if not openwrt_release:
         openwrt_release = package_metadata("nikki").get("openwrt_release", "25.12")
-    release = latest_release("morytyann/OpenWrt-nikki")
+    release = latest_release("levi882/OpenWrt-nikki")
     asset, _ = pick_asset(
         release,
         rf"nikki_x86_64-openwrt-{re.escape(openwrt_release)}\.tar\.gz",
@@ -752,7 +752,7 @@ def build_manifest(
         }
     )
 
-    nikki_repo = "morytyann/OpenWrt-nikki"
+    nikki_repo = "levi882/OpenWrt-nikki"
     nikki_archive = f"nikki_x86_64-openwrt-{nikki['openwrt_release']}.tar.gz"
     packages.append(
         {
