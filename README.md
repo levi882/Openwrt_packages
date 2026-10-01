@@ -66,6 +66,8 @@ apk add luci-app-overlay-restore
 
 Open **System → 备份迁移恢复** to edit the recovery profile, upload an overlay or
 sysupgrade backup, inspect the file/package plan, and explicitly confirm it.
+Use **Save** at the bottom of the page to persist settings separately before
+inspecting a backup from the CLI. Saving settings does not start recovery.
 The same backend is available from the router CLI:
 
 ```sh
