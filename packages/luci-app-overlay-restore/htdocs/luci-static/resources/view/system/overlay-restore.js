@@ -38,9 +38,14 @@ return view.extend({
         return Promise.all([ uci.load('overlay_restore'), callList().then(checked) ]);
     },
 
-    inspect: function(ev) {
+    saveSettings: function() {
         return this.map.save()
-            .then(function() { return callCommit('overlay_restore'); })
+            .then(function() { return callCommit('overlay_restore').then(checked); })
+            .then(function() { return ui.changes.init(); });
+    },
+
+    inspect: function(ev) {
+        return this.saveSettings()
             .then(function() { return ui.uploadFile('/tmp/overlay-restore-upload.tar.gz'); })
             .then(function() { return callPrepare().then(checked); })
             .then(L.bind(function(result) { this.taskId = result.id; return this.refresh(); }, this))
@@ -185,6 +190,10 @@ return view.extend({
     },
 
     handleSaveApply: null,
-    handleSave: null,
+    handleSave: function() {
+        return this.saveSettings()
+            .then(function() { ui.addNotification(null, E('p', '恢复设置已保存，后续检查将使用这些设置。'), 'info'); })
+            .catch(function(error) { ui.addNotification(null, E('p', error.message)); });
+    },
     handleReset: null
 });
