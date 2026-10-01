@@ -1,0 +1,8 @@
+{
+  "admin/system/overlay_restore": {
+    "title": "备份迁移恢复",
+    "order": 75,
+    "action": { "type": "view", "path": "system/overlay-restore" },
+    "depends": { "acl": ["luci-app-overlay-restore"] }
+  }
+}

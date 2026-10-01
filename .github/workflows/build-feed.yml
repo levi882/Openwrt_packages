@@ -35,6 +35,20 @@ jobs:
       - name: checkout
         uses: actions/checkout@v6
 
+      - name: cache Rust toolchain and builds
+        uses: actions/cache@v4
+        with:
+          path: .restore-rust-cache
+          key: restore-rust-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'packages/overlay-restore/src/Cargo.lock') }}
+
+      - name: verify recovery sources
+        run: |
+          bash scripts/test-restore-rust.sh
+          node --check packages/luci-app-overlay-restore/htdocs/luci-static/resources/view/system/overlay-restore.js
+          bash -n scripts/build-local-apks.sh scripts/setup-restore-rust.sh scripts/test-restore-rust.sh
+          sh -n router/restore_overlay.sh packages/overlay-restore/files/etc/init.d/overlay-restore
+          sh -n packages/luci-app-overlay-restore/root/usr/libexec/rpcd/overlay-restore
+
       - name: download release apks from manifest
         run: |
           python3 .github/scripts/download-release-apks.py \
@@ -45,7 +59,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .openwrt-sdk-cache
-          key: openwrt-sdk-${{ env.OPENWRT_BRANCH }}-${{ env.OPENWRT_ARCH }}-v1
+          key: openwrt-sdk-${{ env.OPENWRT_BRANCH }}-${{ env.OPENWRT_ARCH }}-rust-${{ hashFiles('rust-toolchain.toml', 'packages/overlay-restore/src/Cargo.lock') }}
+
+      - name: build local recovery packages
+        run: bash scripts/build-local-apks.sh "bin/packages/${OPENWRT_ARCH}/${FEED_NAME}"
 
       - name: reindex apk feed
         run: bash .github/scripts/reindex-apk-feed.sh "bin/packages/${OPENWRT_ARCH}/${FEED_NAME}"

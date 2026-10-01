@@ -1,0 +1,9 @@
+#!/bin/sh
+case "$1" in
+    list)
+        printf '%s\n' '{"prepare":{},"list":{},"status":{"id":""},"apply":{"id":"","confirmation":""},"retry":{"id":""}}'
+        ;;
+    call)
+        /usr/sbin/overlay-restore rpc "$2" || true
+        ;;
+esac

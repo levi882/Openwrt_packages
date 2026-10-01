@@ -1,0 +1,30 @@
+name: test-overlay-restore
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: cache Rust toolchain and builds
+        uses: actions/cache@v4
+        with:
+          path: .restore-rust-cache
+          key: restore-rust-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'packages/overlay-restore/src/Cargo.lock') }}
+      - name: verify recovery backend
+        run: bash scripts/test-restore-rust.sh
+      - name: check LuCI JavaScript
+        run: node --check packages/luci-app-overlay-restore/htdocs/luci-static/resources/view/system/overlay-restore.js
+      - name: check shell syntax
+        run: |
+          bash -n scripts/build-local-apks.sh scripts/setup-restore-rust.sh scripts/test-restore-rust.sh
+          sh -n router/restore_overlay.sh packages/overlay-restore/files/etc/init.d/overlay-restore
+          sh -n packages/luci-app-overlay-restore/root/usr/libexec/rpcd/overlay-restore

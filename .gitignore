@@ -1,12 +1,53 @@
-bin/
-logs/
-logs_*/
-public/
-feed/
-feeds-src/
-.package-src/
+# Feed and package build outputs
+/bin/
+/logs/
+/logs_*/
+/public/
+/feed/
+/feeds-src/
+/.package-src/
+*.apk
 *.tar.gz
+*.tar.xz
+*.tar.zst
+
+# Local WSL, QEMU and browser verification helpers and data
+/.wsl-dev/
+/.restore-test-cache/
+/.openwrt-sdk-cache/
+/.restore-rust-cache/
+/tests/
+/scripts/setup-restore-dev.sh
+/scripts/fetch-restore-test-tools.sh
+/scripts/setup-restore-browser.sh
+*.qcow2
+*.img
+*.img.gz
+*.vhdx
+
+# Rust and host-side tool caches
+target/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Logs, process files and partial downloads
+*.log
+*.pid
+*.sock
+*.part
+*.tmp
+
+# Local signing material
 private-key.pem
 key-build
 key-build.pub
 secret.key
+
+# Editor and operating system temporary files
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
