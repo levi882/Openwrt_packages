@@ -1,6 +1,6 @@
 # OpenWrt Personal APK Feed
 
-Personal OpenWrt 25.12 `x86_64` APK feed and router restore helper.
+Personal OpenWrt 25.12 `x86_64` APK feed and LuCI backup migration application.
 
 The feed is published at:
 
@@ -41,6 +41,11 @@ Push to `main`, or run the `build-feed` workflow manually. The
 URLs, output filenames, archive members, and SHA256 checksums consumed by the
 generic downloader.
 
+The build also compiles the local `overlay-restore` backend and
+`luci-app-overlay-restore` frontend in `packages/` before signing the feed index.
+The backend uses pinned stable Rust 1.99.0 and produces a static x86_64 musl
+executable; the LuCI frontend uses JavaScript. Python is not required on the router.
+
 ## Router Feed Setup
 
 ```sh
@@ -52,18 +57,31 @@ apk update
 
 ## Restore After Upgrade
 
-Run the restore helper on the router with your overlay backup:
+After publishing the new packages to the feed, install the application:
 
 ```sh
+apk update
+apk add luci-app-overlay-restore
+```
+
+Open **System → 备份迁移恢复** to edit the recovery profile, upload an overlay or
+sysupgrade backup, inspect the file/package plan, and explicitly confirm it.
+The same backend is available from the router CLI:
+
+```sh
+./router/restore_overlay.sh --inspect overlay_backup.tar.gz
 ./router/restore_overlay.sh overlay_backup.tar.gz
 ```
 
-In broad strokes it:
+The helper now requires the installed `overlay-restore` package. It migrates
+configuration and custom regular files through the mounted root filesystem;
+it does not clear or replace the entire overlay. Files absent from the backup
+remain on the current system. Current kernel files, package database, feeds,
+keys, LuCI runtime, and recovery tools are preserved. Selected packages are
+installed after reboot by a persistent `procd` worker, with a retry action for
+failed package/service work.
 
-- restores the overlay backup
-- keeps the current firmware's APK feed state
-- removes stale kernel/package-manager/LuCI runtime files from the backup
-- reinstalls selected packages on first boot
-- preserves the current extroot entry by default
-- reinstalls and configures the packaged IPTV Refresh service when available
-- leaves IPTV stopped and records a warning when the APK is unavailable
+See [the recovery and WSL development guide](docs/overlay-restore.md) for exact
+restore boundaries, settings, task recovery, local APK builds, and QEMU/browser
+verification. Local development APKs have not been published by merely building
+them; publishing still follows the normal feed workflow.
