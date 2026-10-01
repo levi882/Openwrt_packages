@@ -845,12 +845,99 @@ fn missing_network_package_failure_preserves_configuration_and_can_retry() {
 }
 
 #[test]
-fn rpc_rejects_arbitrary_paths_unknown_methods_and_invalid_task_ids() {
+fn rpc_rejects_invalid_backup_paths_unknown_methods_and_invalid_task_ids() {
     let fixture = Fixture::new();
-    assert!(rpc::call(&fixture.jobs, "prepare", &json!({"path": "/etc/shadow"})).is_err());
+    for path in [
+        json!("/etc/shadow"),
+        json!("backup.tar.gz"),
+        json!("/../backup.tar.gz"),
+        json!("/tmp/../../backup.tar.gz"),
+        json!("/missing.tar.gz"),
+        json!("/backup\0.tar.gz"),
+        json!(null),
+        json!(12),
+    ] {
+        assert!(rpc::call(&fixture.jobs, "prepare", &json!({"path": path})).is_err());
+    }
+    assert!(rpc::call(&fixture.jobs, "prepare", &json!({"command": "id"})).is_err());
     assert!(rpc::call(&fixture.jobs, "status", &json!({"id": "../outside"})).is_err());
     assert!(rpc::call(&fixture.jobs, "exec", &json!({})).is_err());
     assert!(rpc::call(&fixture.jobs, "status", &json!({"id": 12})).is_err());
+}
+
+#[test]
+fn rpc_router_backup_is_retained_and_uses_an_independent_snapshot() {
+    let fixture = Fixture::new();
+    let source = fixture.root.join("mnt/备份/overlay backup.tgz");
+    write(&source, fs::read(&fixture.backup).unwrap());
+    let upload = fixture.root.join("tmp/overlay-restore-upload.tar.gz");
+    write(&upload, b"unrelated upload");
+    let result = rpc::call(
+        &fixture.jobs,
+        "prepare",
+        &json!({"path": "/mnt/备份/overlay backup.tgz"}),
+    )
+    .unwrap();
+    let id = result["id"].as_str().unwrap();
+    assert_eq!(
+        fs::read(&source).unwrap(),
+        fs::read(&fixture.backup).unwrap()
+    );
+    assert_eq!(fs::read(&upload).unwrap(), b"unrelated upload");
+    write(&source, b"changed after inspection");
+    fixture.jobs.worker(true).unwrap();
+    assert_eq!(fixture.jobs.load(id).unwrap()["status"], "ready");
+}
+
+#[test]
+fn rpc_upload_still_consumes_only_the_fixed_upload_path() {
+    let fixture = Fixture::new();
+    let upload = fixture.root.join("tmp/overlay-restore-upload.tar.gz");
+    write(&upload, fs::read(&fixture.backup).unwrap());
+    let result = rpc::call(&fixture.jobs, "prepare", &json!({})).unwrap();
+    assert!(!upload.exists());
+    assert!(fixture.backup.exists());
+    fixture.jobs.worker(true).unwrap();
+    assert_eq!(
+        fixture.jobs.load(result["id"].as_str().unwrap()).unwrap()["status"],
+        "ready"
+    );
+}
+
+#[test]
+fn rpc_router_backup_rejects_links_special_files_and_oversized_sources() {
+    let fixture = Fixture::new();
+    let link = fixture.root.join("link.tar.gz");
+    symlink(&fixture.backup, &link).unwrap();
+    assert!(rpc::call(&fixture.jobs, "prepare", &json!({"path": "/link.tar.gz"})).is_err());
+    assert!(fs::symlink_metadata(&link).unwrap().is_symlink());
+    fs::create_dir(fixture.root.join("directory.tar.gz")).unwrap();
+    assert!(
+        rpc::call(
+            &fixture.jobs,
+            "prepare",
+            &json!({"path": "/directory.tar.gz"})
+        )
+        .is_err()
+    );
+    let outside = tempdir().unwrap();
+    symlink(outside.path(), fixture.root.join("escape")).unwrap();
+    assert!(
+        rpc::call(
+            &fixture.jobs,
+            "prepare",
+            &json!({"path": "/escape/backup.tar.gz"})
+        )
+        .is_err()
+    );
+    let large = fixture.root.join("large.tar.gz");
+    File::create(&large)
+        .unwrap()
+        .set_len(257 * 1024 * 1024)
+        .unwrap();
+    assert!(rpc::call(&fixture.jobs, "prepare", &json!({"path": "/large.tar.gz"})).is_err());
+    assert!(large.exists());
+    assert!(fixture.jobs.states().unwrap().is_empty());
 }
 
 #[test]

@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-overlay-restore
 PKG_VERSION:=0.2.0
-PKG_RELEASE:=3
+PKG_RELEASE:=5
 PKG_LICENSE:=MIT
 PKGARCH:=all
 
@@ -14,6 +14,7 @@ define Package/luci-app-overlay-restore
   SUBMENU:=3. Applications
   TITLE:=Backup migration and post-reboot package recovery
   DEPENDS:=+overlay-restore +luci-base +luci-theme-bootstrap +rpcd-mod-file
+  EXTRA_DEPENDS:=overlay-restore (>=0.2.0-r4)
 endef
 
 define Build/Compile
