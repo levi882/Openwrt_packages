@@ -2,7 +2,8 @@
   "luci-app-overlay-restore": {
     "description": "Inspect and apply OpenWrt backup migrations",
     "read": {
-      "ubus": { "overlay-restore": ["list", "status"], "uci": ["get", "changes"] },
+      "ubus": { "overlay-restore": ["list", "status"], "uci": ["get", "changes"], "file": ["list", "stat"] },
+      "file": { "/*": ["list"] },
       "uci": ["overlay_restore"]
     },
     "write": {
