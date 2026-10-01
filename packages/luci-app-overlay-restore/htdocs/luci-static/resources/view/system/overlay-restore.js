@@ -27,6 +27,11 @@ function checked(result) {
     return result;
 }
 
+function uploadDisabled(task) {
+    return !L.hasViewPermission() || (!!task &&
+        [ 'validating', 'queued', 'preparing_packages', 'applying', 'awaiting_reboot', 'installing' ].indexOf(task.status) >= 0);
+}
+
 return view.extend({
     taskId: null,
     load: function() {
@@ -120,10 +125,10 @@ return view.extend({
                 this.taskId = result.tasks[0].id;
             return this.taskId ? callStatus(this.taskId).then(checked) : null;
         }, this)).then(L.bind(function(task) {
+            this.upload.disabled = uploadDisabled(task);
             if (!task)
                 return;
             dom.content(this.status, this.renderTask(task));
-            this.upload.disabled = !L.hasViewPermission() || [ 'validating', 'queued', 'preparing_packages', 'applying', 'awaiting_reboot', 'installing' ].indexOf(task.status) >= 0;
             if (task.status == 'awaiting_reboot' && task.plan.settings.reboot && !task.reboot_failed && !this.reconnecting) {
                 this.reconnecting = true;
                 ui.showModal('正在等待重启', [ E('p', { 'class': 'spinning' }, '重启后重新登录此页面，可查看软件包恢复结果。') ]);
@@ -168,11 +173,12 @@ return view.extend({
             section.taboption('limits', form.Value, item[0], item[1]).datatype = item[2];
         });
         return map.render().then(L.bind(function(node) {
+            const task = (data[1].tasks || [])[0];
             this.status = E('div');
             this.history = E('div', { 'class': 'cbi-section' });
-            this.upload = E('button', { 'class': 'btn cbi-button-action', 'disabled': !L.hasViewPermission(),
+            this.upload = E('button', { 'class': 'btn cbi-button-action', 'disabled': uploadDisabled(task) || null,
                 'click': ui.createHandlerFn(this, 'inspect') }, '上传并检查备份');
-            this.taskId = data[1].tasks && data[1].tasks.length ? data[1].tasks[0].id : null;
+            this.taskId = task ? task.id : null;
             poll.add(L.bind(function() { return this.refresh().catch(function() {}); }, this), 3);
             return E('div', {}, [ node, E('div', { 'class': 'cbi-section' }, [ this.upload ]), this.status, this.history ]);
         }, this));
