@@ -43,67 +43,106 @@ function openQuickFile(options) {
     const controller = new AbortController();
     const panel = E('div', {}, E('p', { 'class': 'spinning' }, '正在打开 QuickFile…'));
     const notice = E('p', { 'class': 'alert-message warning', 'style': 'display:none' });
-    const pathInput = options.directory ? null : E('input', {
-        'type': 'text', 'class': 'cbi-input-text', 'aria-label': 'QuickFile 备份路径',
-        'value': options.value || '', 'placeholder': '/mnt/backup/overlay_backup.tar.gz',
-        'style': 'width:100%;box-sizing:border-box'
-    });
-    let frame = null, closed = false;
+    let frame = null, closed = false, selecting = false, detachPicker = function() {};
     const close = function() {
         closed = true;
         controller.abort();
+        detachPicker();
         if (frame)
             frame.remove();
         ui.hideModal();
     };
-    const select = E('button', {
-        'class': 'btn cbi-button-action', 'disabled': true,
-        'click': ui.createHandlerFn(null, function() {
-            if (!options.enabled())
-                return;
-            return Promise.resolve().then(function() {
-                let path;
-                if (options.directory) {
-                    const location = new URL(frame.contentWindow.location.href);
-                    if (location.origin != page.origin || location.pathname.replace(/\/$/, '') != page.pathname)
-                        throw new Error('请先在 QuickFile 中打开目标目录。');
-                    path = location.searchParams.get('path') || '/';
-                    if (path == '.')
-                        path = '/';
-                    else if (path.indexOf('/') != 0)
-                        path = '/' + path.replace(/^\.\//, '');
-                }
-                else {
-                    path = pathInput.value.trim();
-                }
-                if (path.indexOf('/') != 0 || /[\x00-\x1f\x7f]/.test(path) || path.split('/').indexOf('..') >= 0)
-                    throw new Error('请使用路由器上的绝对路径。');
-                if (!options.directory && !/\.(tar\.gz|tgz)$/.test(path))
-                    throw new Error('请选择 .tar.gz / .tgz 备份文件。');
-                return fs.stat(path).then(function(stat) {
-                    if (stat.type != (options.directory ? 'directory' : 'file'))
-                        throw new Error(options.directory ? '请选择已有目录。' : '请选择已有的普通备份文件。');
-                    if (!closed && options.enabled()) {
-                        options.select(path);
-                        close();
-                    }
-                });
-            }).catch(function(error) {
+    const currentDirectory = function() {
+        const location = new URL(frame.contentWindow.location.href);
+        if (location.origin != page.origin || location.pathname.replace(/\/$/, '') != page.pathname)
+            throw new Error('请先在 QuickFile 中打开目标目录。');
+        let path = location.searchParams.get('path') || '/';
+        if (path == '.')
+            path = '/';
+        else if (path.indexOf('/') != 0)
+            path = '/' + path.replace(/^\.\//, '');
+        return path;
+    };
+    const choose = function(getPath) {
+        if (closed || selecting || !options.enabled())
+            return Promise.resolve();
+        selecting = true;
+        notice.style.display = 'none';
+        let path;
+        return Promise.resolve().then(function() {
+            path = getPath();
+            if (path.indexOf('/') != 0 || /[\x00-\x1f\x7f]/.test(path) || path.split('/').indexOf('..') >= 0)
+                throw new Error('请使用路由器上的绝对路径。');
+            if (!options.directory && !/\.(tar\.gz|tgz)$/.test(path))
+                throw new Error('请选择 .tar.gz / .tgz 备份文件。');
+            return fs.stat(path);
+        }).then(function(stat) {
+            if (stat.type != (options.directory ? 'directory' : 'file'))
+                throw new Error(options.directory ? '请选择已有目录。' : '请选择已有的普通备份文件。');
+            if (!closed && options.enabled()) {
+                options.select(path);
+                close();
+            }
+        }).catch(function(error) {
+            if (!closed) {
                 dom.content(notice, error.message);
                 notice.style.display = '';
-            });
-        })
-    }, options.directory ? '使用当前目录' : '使用此备份路径');
-    ui.showModal(options.directory ? 'QuickFile · 选择目录' : 'QuickFile · 备份文件管理', [
+            }
+        }).finally(function() { selecting = false; });
+    };
+    const select = options.directory ? E('button', {
+        'class': 'btn cbi-button-action', 'disabled': true,
+        'click': ui.createHandlerFn(null, function() { return choose(currentDirectory); })
+    }, '使用当前目录') : null;
+    const attachPicker = function() {
+        detachPicker();
+        if (closed)
+            return;
+        if (select)
+            select.disabled = true;
+        try {
+            currentDirectory();
+            if (select) {
+                select.disabled = false;
+                return;
+            }
+            const frameDocument = frame.contentDocument;
+            const click = function(ev) {
+                if (ev.button != 0 || closed || !options.enabled())
+                    return;
+                const target = ev.target.closest ? ev.target : ev.target.parentElement;
+                if (!target)
+                    return;
+                const entry = target.closest('[data-swipe-name]');
+                if (!entry || target.closest('button, a, textarea, select, .qf-col-actions, .qf-col-swipe') ||
+                    (target.closest('input') && !target.matches('input[type="checkbox"]')) ||
+                    entry.querySelector('.fa-folder, .fa-folder-open'))
+                    return;
+                const name = entry.getAttribute('data-swipe-name');
+                if (!name || name.indexOf('/') >= 0 || !/\.(tar\.gz|tgz)$/.test(name))
+                    return;
+                // Handle selection before QuickFile's archive preview or multi-select handlers.
+                ev.preventDefault();
+                ev.stopImmediatePropagation();
+                choose(function() { return currentDirectory().replace(/\/$/, '') + '/' + name; });
+            };
+            frameDocument.addEventListener('click', click, true);
+            detachPicker = function() { frameDocument.removeEventListener('click', click, true); };
+        }
+        catch (error) {
+            dom.content(notice, error.message);
+            notice.style.display = '';
+        }
+    };
+    ui.showModal(options.directory ? 'QuickFile · 选择目录' : 'QuickFile · 选择备份', [
         E('style', '.modal.overlay-restore-quickfile { width:calc(100vw - 32px);max-width:1280px;box-sizing:border-box }'),
         E('p', options.directory ? '在 QuickFile 中打开目标目录，再点击「使用当前目录」。' :
-            '在 QuickFile 中管理备份文件，将备份的完整路径复制或填写到下方，再点击「使用此备份路径」。'),
+            '点击 .tar.gz / .tgz 备份的文件名、文件行或勾选框即可选择；双击目录进入。'),
         panel,
-        pathInput ? E('p', {}, [ E('label', '备份完整路径'), pathInput ]) : '',
         notice,
         E('div', { 'class': 'right' }, [
             E('button', { 'class': 'btn', 'click': close }, '关闭'), ' ',
-            E('a', { 'class': 'btn', 'href': page.href, 'target': '_blank', 'rel': 'noopener noreferrer' }, '在新窗口打开'), ' ', select
+            E('a', { 'class': 'btn', 'href': page.href, 'target': '_blank', 'rel': 'noopener noreferrer' }, '在新窗口打开'), ' ', select || ''
         ])
     ], 'overlay-restore-quickfile');
     const timeout = window.setTimeout(function() { controller.abort(); }, 8000);
@@ -120,8 +159,8 @@ function openQuickFile(options) {
             'src': page.href, 'title': 'QuickFile 文件管理',
             'style': 'display:block;width:100%;height:60vh;min-height:240px;border:0;border-radius:6px'
         });
+        frame.addEventListener('load', attachPicker);
         dom.content(panel, frame);
-        select.disabled = false;
     }).catch(function() {
         if (!closed && panel.isConnected)
             dom.content(panel, E('p', { 'class': 'alert-message warning' },
@@ -335,7 +374,7 @@ return view.extend({
                         select: L.bind(function(path) { this.backupPath.value = path; }, this)
                     });
                 })
-            }, '打开 QuickFile 管理备份');
+            }, '打开 QuickFile 选择备份');
             this.taskId = task ? task.id : null;
             poll.add(L.bind(function() { return this.refresh().catch(function() {}); }, this), 3);
             return E('div', {}, [ formNode, E('div', { 'class': 'cbi-section' }, [

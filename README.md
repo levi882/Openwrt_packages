@@ -70,6 +70,7 @@ plan, and explicitly confirm it. Router file and directory browsing uses the
 embedded QuickFile page. If QuickFile is already available on the router, use it
 to manage backups or choose the IPTV and Home Assistant directories without
 leaving the restore page. Paths can also be entered directly.
+Click a backup file in QuickFile's list or grid to fill its path automatically.
 Use **Save** at the bottom of the page to persist settings separately before
 inspecting a backup from the CLI. Saving settings does not start recovery.
 The same backend is available from the router CLI:
