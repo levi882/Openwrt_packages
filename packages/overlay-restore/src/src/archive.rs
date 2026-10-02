@@ -12,11 +12,8 @@ use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 pub fn safe_name(name: &str) -> Result<String> {
-    if name.len() > 4096
-        || name.starts_with('/')
-        || name.contains('\\')
-        || name.chars().any(char::is_control)
-    {
+    // OpenWrt uses Unix paths: backslashes are literal filename characters.
+    if name.len() > 4096 || name.starts_with('/') || name.chars().any(char::is_control) {
         bail!("Unsafe archive path: {name:?}");
     }
     let mut parts = Vec::new();
@@ -107,7 +104,7 @@ fn pax_attributes(contents: &[u8]) -> Result<BTreeMap<String, String>> {
 }
 
 fn check_link(name: &str, target: &str) -> Result<()> {
-    if target.len() > 4096 || target.contains('\\') || target.chars().any(char::is_control) {
+    if target.len() > 4096 || target.chars().any(char::is_control) {
         bail!("Invalid archive link: {name}");
     }
     if target.starts_with('/') {

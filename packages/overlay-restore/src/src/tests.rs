@@ -282,13 +282,74 @@ fn sysupgrade_and_credential_network_options() {
 }
 
 #[test]
-fn traversal_absolute_control_and_backslash_names_are_rejected() {
+fn unix_backslash_names_survive_inspection_and_migration() {
+    let fixture = Fixture::new();
+    let members: &[(&str, &[u8])] = &[
+        ("overlay/upper/etc/config/system", b"config system\n"),
+        ("overlay/upper/root/ \\", b"literal backslash"),
+        ("overlay/upper/root/dir\\name/note", b"backslash directory"),
+        ("overlay/upper/root/dir/name/note", b"ordinary directories"),
+        ("overlay/upper/root/\\../note", b"literal parent name"),
+    ];
+    backup(&fixture.backup, members, 0o640);
+    let current = fixture.root.join("etc/config/system");
+    write(&current, "current configuration");
+    let id = fixture.ready();
+    assert_eq!(
+        fs::read_to_string(&current).unwrap(),
+        "current configuration"
+    );
+    let task = fixture.jobs.public(&id, true).unwrap();
+    assert_eq!(task["plan"]["file_count"], members.len());
+    for (name, _) in members {
+        let path = name.strip_prefix("overlay/upper/").unwrap();
+        assert!(
+            task["plan"]["files"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|entry| entry["path"] == path && entry["archive_path"] == *name)
+        );
+    }
+    fixture.jobs.apply(&id, &id, None).unwrap();
+    fixture.jobs.worker(true).unwrap();
+    assert_eq!(fixture.jobs.load(&id).unwrap()["status"], "awaiting_reboot");
+    for (name, contents) in members {
+        let path = fixture
+            .root
+            .join(name.strip_prefix("overlay/upper/").unwrap());
+        assert_eq!(fs::read(&path).unwrap(), *contents);
+        assert_eq!(path.metadata().unwrap().mode() & 0o777, 0o640);
+    }
+}
+
+#[test]
+fn unix_backslash_link_targets_are_skipped() {
+    for target in ["dir\\name/note", "\\../note", "/tmp/back\\slash"] {
+        let fixture = Fixture::new();
+        link_backup(&fixture.backup, target);
+        let plan = inspect_backup(
+            &fixture.backup,
+            &fixture.options,
+            &fixture.root.join("payload"),
+        )
+        .unwrap();
+        assert_eq!(plan.files.len(), 1);
+        assert_eq!(plan.skipped["links and directories"], 1);
+        assert!(!fixture.root.join("payload/root/link").exists());
+    }
+}
+
+#[test]
+fn traversal_absolute_and_control_names_are_rejected() {
     for name in [
         "../../etc/shadow",
         "/etc/shadow",
         "root/../etc/shadow",
-        "root\\escape",
+        "root/dir\\name/../etc/shadow",
         "root/line\n",
+        "root/tab\t",
+        "root/nul\0",
     ] {
         assert!(safe_name(name).is_err(), "{name:?}");
     }
@@ -296,6 +357,8 @@ fn traversal_absolute_control_and_backslash_names_are_rejected() {
         "../etc/config/system",
         "/etc/config/system",
         "root/../etc/config/system",
+        "root/dir\\name/../etc/config/system",
+        "root/line\n",
     ] {
         let fixture = Fixture::new();
         backup(
@@ -351,15 +414,17 @@ fn links_are_skipped_and_escaping_links_are_rejected() {
     assert_eq!(plan.files.len(), 1);
     assert!(!fixture.root.join("payload/root/link").exists());
     fs::remove_dir_all(fixture.root.join("payload")).unwrap();
-    link_backup(&fixture.backup, "../../outside");
-    assert!(
-        inspect_backup(
-            &fixture.backup,
-            &fixture.options,
-            &fixture.root.join("payload")
-        )
-        .is_err()
-    );
+    for target in ["../../outside", "dir\\name/../../../outside"] {
+        link_backup(&fixture.backup, target);
+        assert!(
+            inspect_backup(
+                &fixture.backup,
+                &fixture.options,
+                &fixture.root.join("payload")
+            )
+            .is_err()
+        );
+    }
 }
 
 #[test]
