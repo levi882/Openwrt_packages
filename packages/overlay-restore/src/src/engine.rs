@@ -23,6 +23,10 @@ const ACTIVE: &[&str] = &[
     "awaiting_reboot",
     "installing",
 ];
+pub const MAX_TASKS: usize = 20;
+pub const MAX_LOG_BYTES: u64 = 1024 * 1024;
+pub const LOG_TAIL_BYTES: u64 = 40000;
+const FINISHED: &[&str] = &["complete", "complete_with_warnings", "failed_validation"];
 
 pub struct Jobs {
     pub root: PathBuf,
@@ -105,14 +109,46 @@ impl Jobs {
 
     pub fn log(&self, id: &str, text: &str) -> Result<()> {
         let path = self.path(id)?.join("task.log");
+        let _lock = self.lock("log", true)?;
         let mut file = OpenOptions::new()
             .create(true)
-            .append(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
             .mode(0o600)
-            .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC | libc::O_NONBLOCK)
             .open(path)?;
+        if !file.metadata()?.is_file() {
+            bail!("Task log is not a regular file");
+        }
         file.set_permissions(fs::Permissions::from_mode(0o600))?;
-        writeln!(file, "{} {}", timestamp(), text.trim_end())?;
+        let entry = format!(
+            "{} {}\n",
+            timestamp(),
+            tail(text.trim_end(), MAX_LOG_BYTES as usize - 64)
+        );
+        let size = file.metadata()?.len();
+        if size.saturating_add(entry.len() as u64) > MAX_LOG_BYTES {
+            let keep = size.min(MAX_LOG_BYTES - entry.len() as u64);
+            file.seek(SeekFrom::Start(size - keep))?;
+            let mut previous = Vec::new();
+            std::io::Read::by_ref(&mut file)
+                .take(keep)
+                .read_to_end(&mut previous)?;
+            let start = if size > keep {
+                previous
+                    .iter()
+                    .position(|byte| *byte == b'\n')
+                    .map_or(previous.len(), |index| index + 1)
+            } else {
+                0
+            };
+            file.seek(SeekFrom::Start(0))?;
+            file.write_all(&previous[start..])?;
+            file.set_len((previous.len() - start) as u64)?;
+        }
+        file.seek(SeekFrom::End(0))?;
+        file.write_all(entry.as_bytes())?;
         Ok(())
     }
 
@@ -122,15 +158,130 @@ impl Jobs {
             let entry = entry?;
             let name = entry.file_name().to_string_lossy().into_owned();
             if self.path(&name).is_ok() && entry.path().join("state.json").is_file() {
-                states.push(self.load(&name)?);
+                match self.load(&name) {
+                    Ok(state) => states.push(state),
+                    Err(error)
+                        if error
+                            .downcast_ref::<std::io::Error>()
+                            .is_some_and(|error| error.kind() == std::io::ErrorKind::NotFound) => {}
+                    Err(error) => return Err(error),
+                }
             }
         }
         states.sort_by_key(|state| std::cmp::Reverse(state["created"].as_u64().unwrap_or(0)));
         Ok(states)
     }
 
+    pub fn can_cleanup(state: &Value) -> bool {
+        FINISHED.contains(&state["status"].as_str().unwrap_or(""))
+    }
+
+    pub fn can_remove(state: &Value) -> bool {
+        state["status"] == "ready" || Self::can_cleanup(state)
+    }
+
+    fn remove_files(&self, id: &str) -> Result<()> {
+        let task = self.path(id)?;
+        let temporary = self.temporary.join(id);
+        for path in [&temporary, &task] {
+            match fs::symlink_metadata(path) {
+                Ok(metadata) if metadata.is_dir() && path.canonicalize()? == *path => (),
+                Ok(_) => bail!(
+                    "Task directory is not a regular directory: {}",
+                    path.display()
+                ),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
+                Err(error) => return Err(error.into()),
+            }
+        }
+        for path in [&temporary, &task] {
+            match fs::remove_dir_all(path) {
+                Ok(()) => (),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
+                Err(error) => return Err(error.into()),
+            }
+        }
+        sync_parent(&task)
+    }
+
+    pub fn remove(&self, id: &str, confirmation: &str) -> Result<Value> {
+        self.path(id)?;
+        if confirmation != id {
+            bail!("Task deletion must be explicitly confirmed");
+        }
+        let _jobs = self.lock("jobs", false)?;
+        let _task = self.lock(&format!("task-{id}"), false)?;
+        let _validator = self.lock(&format!("validate-{id}"), false)?;
+        let _log = self.lock("log", true)?;
+        if !Self::can_remove(&self.load(id)?) {
+            bail!(
+                "Only unused previews and finished tasks can be deleted; unfinished recovery tasks are protected"
+            );
+        }
+        self.remove_files(id)?;
+        Ok(json!({"removed": [id]}))
+    }
+
+    pub fn cleanup(&self) -> Result<Value> {
+        let _jobs = self.lock("jobs", false)?;
+        let mut removed = Vec::new();
+        let mut busy = 0;
+        for state in self.states()? {
+            if !Self::can_cleanup(&state) {
+                continue;
+            }
+            let id = state["id"].as_str().context("Task has no ID")?;
+            self.path(id)?;
+            let Ok(_task) = self.lock(&format!("task-{id}"), false) else {
+                busy += 1;
+                continue;
+            };
+            let Ok(_validator) = self.lock(&format!("validate-{id}"), false) else {
+                busy += 1;
+                continue;
+            };
+            let _log = self.lock("log", true)?;
+            if Self::can_cleanup(&self.load(id)?) {
+                self.remove_files(id)?;
+                removed.push(id.to_owned());
+            }
+        }
+        Ok(json!({"removed": removed, "skipped_busy": busy}))
+    }
+
+    pub fn usage(&self) -> Result<Value> {
+        fn size(directory: &Path) -> Result<u64> {
+            let mut pending = vec![directory.to_owned()];
+            let mut bytes = 0u64;
+            while let Some(path) = pending.pop() {
+                let metadata = match fs::symlink_metadata(&path) {
+                    Ok(metadata) => metadata,
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                    Err(error) => return Err(error.into()),
+                };
+                if metadata.is_file() {
+                    bytes = bytes.saturating_add(metadata.len());
+                } else if metadata.is_dir() {
+                    let entries = match fs::read_dir(path) {
+                        Ok(entries) => entries,
+                        Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                        Err(error) => return Err(error.into()),
+                    };
+                    for entry in entries {
+                        pending.push(entry?.path());
+                    }
+                }
+            }
+            Ok(bytes)
+        }
+        Ok(
+            json!({"task_bytes": size(&self.directory)?, "temporary_bytes": size(&self.temporary)?, "free_bytes": disk_free(&self.directory)?}),
+        )
+    }
+
     pub fn public(&self, id: &str, details: bool) -> Result<Value> {
         let mut state = self.load(id)?;
+        state["can_remove"] = json!(Self::can_remove(&state));
         let completed = state
             .as_object_mut()
             .context("Invalid task state")?
@@ -156,9 +307,9 @@ impl Jobs {
         if details && task.join("task.log").is_file() {
             let mut file = open_regular(&task.join("task.log"))?;
             let size = file.metadata()?.len();
-            file.seek(SeekFrom::Start(size.saturating_sub(40000)))?;
+            file.seek(SeekFrom::Start(size.saturating_sub(LOG_TAIL_BYTES)))?;
             let mut contents = Vec::new();
-            file.take(40000).read_to_end(&mut contents)?;
+            file.take(LOG_TAIL_BYTES).read_to_end(&mut contents)?;
             state["log"] = json!(String::from_utf8_lossy(&contents));
         }
         Ok(state)
@@ -230,6 +381,16 @@ impl Jobs {
         options.validate()?;
         let _lock = self.lock("jobs", false)?;
         self.require_idle()?;
+        if self.states()?.len() >= MAX_TASKS {
+            bail!(
+                "Recovery task limit ({MAX_TASKS}) reached; clear finished tasks or discard an unused preview before inspecting another backup"
+            );
+        }
+        if disk_free(&self.directory)? < 8 * 1024 * 1024 {
+            bail!(
+                "Insufficient persistent storage for recovery records; clear finished tasks first"
+            );
+        }
         let mut source = open_regular(filename)?;
         let size = source.metadata()?.len();
         if size == 0 {
@@ -662,8 +823,27 @@ impl Jobs {
     pub fn worker(&self, once: bool) -> Result<()> {
         let _lock = self.lock("worker", false)?;
         loop {
-            for state in self.states()?.into_iter().rev() {
-                let id = state["id"].as_str().context("Task has no ID")?;
+            for snapshot in self.states()?.into_iter().rev() {
+                let id = snapshot["id"].as_str().context("Task has no ID")?;
+                let path = self.path(id)?;
+                let Ok(_task) = self.lock(&format!("task-{id}"), false) else {
+                    continue;
+                };
+                let state = match self.load(id) {
+                    Ok(state) => state,
+                    Err(_) if !path.exists() => continue,
+                    Err(error) => return Err(error),
+                };
+                if path
+                    .join("task.log")
+                    .symlink_metadata()
+                    .is_ok_and(|metadata| metadata.len() > MAX_LOG_BYTES)
+                {
+                    self.log(
+                        id,
+                        "Older log entries were discarded to keep the 1 MiB limit.",
+                    )?;
+                }
                 let status = state["status"].as_str().unwrap_or("");
                 match status {
                     "validating" => self.validate(id)?,

@@ -46,6 +46,11 @@ overlay-restore inspect /tmp/overlay_backup.tar.gz
 overlay-restore apply TASK_ID --confirm TASK_ID
 overlay-restore status TASK_ID
 overlay-restore retry TASK_ID
+overlay-restore usage
+# 清理所有已完成和检查失败的任务资料（含日志、原件及暂存文件）。
+overlay-restore cleanup
+# 单独删除已结束任务，或取消不再使用的待确认任务。
+overlay-restore remove TASK_ID --confirm TASK_ID
 ```
 
 `apply --no-reboot` 只迁移文件，需要手动重启后才进入软件恢复阶段。
@@ -88,8 +93,18 @@ overlay-restore retry TASK_ID
 任务目录为 `/etc/overlay-restore/jobs/TASK_ID/`，目录权限 `0700`，
 配置、状态和日志通常为 `0600`。目录内包含冻结后的选项、文件 SHA256、
 恢复计划、待写入文件、写入前的原始文件以及软件执行记录。
-日志可通过 LuCI 或 `overlay-restore status TASK_ID` 查看，页面显示末尾 40 KB。
-原始文件和任务记录会保留，便于人工核对；目前没有自动清理历史任务。
+页面显示最近 10 个任务，磁盘最多保存 20 个任务；达到上限后停止接受新的备份检查，
+需要先手动清理已结束任务，或取消不再使用的待确认任务。升级前已有的超额任务会保留。
+日志可通过 LuCI 或 `overlay-restore status TASK_ID` 查看，页面显示末尾约 40 KB。
+每个任务日志最多保留 1 MiB 的最新内容，超出时移除较早内容；后台启动时也会整理旧的超大日志。
+「查看占用」按需统计任务文件和临时检查文件的大小，并显示任务所在磁盘的剩余空间。
+常规状态轮询不扫描任务文件，避免因大量文件拖慢页面。
+
+「清理已结束的任务」仅删除已完成（含警告）和检查失败的任务资料。
+选中等待确认的任务后，可以使用「取消并删除任务」释放其临时检查文件。
+正在检查、迁移、等待重启或安装软件的任务，以及恢复失败后尚未完成的任务会保留。
+删除任务会同时删除它的日志、暂存文件和覆盖前保存的原件；当前配置和磁盘上的原始备份文件不会删除。
+清理前请先保存仍需排查或人工回退的任务资料。任务不会在后台自动删除。
 
 流程为：
 

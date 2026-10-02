@@ -6,7 +6,7 @@ use std::path::Path;
 
 fn help() {
     println!(
-        "overlay-restore {}\nInspect and migrate OpenWrt backup configuration\n\nCommands:\n  inspect BACKUP\n  apply TASK_ID --confirm TASK_ID [--no-reboot]\n  status TASK_ID\n  retry TASK_ID\n  list\n  worker [--once]\n  rpc METHOD\n  --version",
+        "overlay-restore {}\nInspect and migrate OpenWrt backup configuration\n\nCommands:\n  inspect BACKUP\n  apply TASK_ID --confirm TASK_ID [--no-reboot]\n  status TASK_ID\n  retry TASK_ID\n  list\n  usage\n  cleanup\n  remove TASK_ID --confirm TASK_ID\n  worker [--once]\n  rpc METHOD\n  --version",
         env!("CARGO_PKG_VERSION")
     );
 }
@@ -82,6 +82,11 @@ fn main_inner() -> Result<i32> {
             state
         }
         "list" if arguments.len() == 1 => rpc::list(&jobs)?,
+        "usage" if arguments.len() == 1 => jobs.usage()?,
+        "cleanup" if arguments.len() == 1 => jobs.cleanup()?,
+        "remove" if arguments.len() == 4 && arguments[2] == "--confirm" => {
+            jobs.remove(&arguments[1], &arguments[3])?
+        }
         "worker" if arguments.len() == 1 || arguments.len() == 2 && arguments[1] == "--once" => {
             jobs.worker(arguments.len() == 2)?;
             return Ok(0);
