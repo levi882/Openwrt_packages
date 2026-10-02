@@ -1,4 +1,4 @@
-use crate::engine::Jobs;
+use crate::engine::{Jobs, LOG_TAIL_BYTES, MAX_LOG_BYTES, MAX_TASKS};
 use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
 use std::fs;
@@ -32,9 +32,9 @@ fn backup_path(jobs: &Jobs, value: &Value) -> Result<PathBuf> {
 pub fn call(jobs: &Jobs, method: &str, arguments: &Value) -> Result<Value> {
     let allowed: &[&str] = match method {
         "prepare" => &["path"],
-        "list" => &[],
+        "list" | "usage" | "cleanup" => &[],
         "status" | "retry" => &["id"],
-        "apply" => &["id", "confirmation"],
+        "apply" | "remove" => &["id", "confirmation"],
         _ => bail!("Unknown recovery method"),
     };
     let arguments = arguments
@@ -62,12 +62,27 @@ pub fn call(jobs: &Jobs, method: &str, arguments: &Value) -> Result<Value> {
     if method == "list" {
         return list(jobs);
     }
+    if method == "usage" {
+        return jobs.usage();
+    }
+    if method == "cleanup" {
+        return jobs.cleanup();
+    }
     let id = arguments
         .get("id")
         .and_then(Value::as_str)
         .context("Invalid task ID")?;
     if method == "status" {
         return jobs.public(id, true);
+    }
+    if method == "remove" {
+        return jobs.remove(
+            id,
+            arguments
+                .get("confirmation")
+                .and_then(Value::as_str)
+                .context("Explicit confirmation is required")?,
+        );
     }
     let state = if method == "apply" {
         jobs.apply(
@@ -86,9 +101,12 @@ pub fn call(jobs: &Jobs, method: &str, arguments: &Value) -> Result<Value> {
 }
 
 pub fn list(jobs: &Jobs) -> Result<Value> {
+    let states = jobs.states()?;
     let mut tasks = Vec::new();
-    for state in jobs.states()?.iter().take(10) {
+    for state in states.iter().take(10) {
         tasks.push(jobs.public(state["id"].as_str().context("Task has no ID")?, false)?);
     }
-    Ok(json!({"tasks": tasks}))
+    Ok(
+        json!({"tasks": tasks, "task_ids": states.iter().map(|state| state["id"].clone()).collect::<Vec<_>>(), "total_tasks": states.len(), "cleanup_count": states.iter().filter(|state| Jobs::can_cleanup(state)).count(), "max_tasks": MAX_TASKS, "max_log_bytes": MAX_LOG_BYTES, "log_tail_bytes": LOG_TAIL_BYTES}),
+    )
 }

@@ -1,6 +1,6 @@
 use super::*;
 use crate::archive::{inspect_backup, merge_fstab, safe_name};
-use crate::engine::Jobs;
+use crate::engine::{Jobs, MAX_LOG_BYTES, MAX_TASKS};
 use crate::settings::{Options, defaults, from_uci, validate};
 use crate::util::{Runner, atomic_write, read_json, save_json};
 use flate2::{Compression, write::GzEncoder};
@@ -174,6 +174,231 @@ impl Fixture {
         assert_eq!(self.jobs.load(&id).unwrap()["status"], "awaiting_reboot");
         id
     }
+}
+
+fn history_record(fixture: &Fixture, index: usize, status: &str) -> String {
+    let id = format!("{index:032x}");
+    save_json(
+        &fixture.jobs.path(&id).unwrap().join("state.json"),
+        &json!({
+            "id": id, "status": status, "created": index, "updated": index,
+            "completed_files": [], "packages": {}, "boot_attempts": 0
+        }),
+    )
+    .unwrap();
+    id
+}
+
+#[test]
+fn cleanup_removes_finished_task_data_and_preserves_pending_recovery() {
+    let fixture = Fixture::new();
+    let backup_before = fs::read(&fixture.backup).unwrap();
+    let current = fixture.root.join("etc/config/system");
+    write(&current, "current configuration");
+    let statuses = [
+        "complete",
+        "complete_with_warnings",
+        "failed_validation",
+        "ready",
+        "failed_prepare",
+        "failed_apply",
+        "failed_packages",
+        "validating",
+        "queued",
+        "preparing_packages",
+        "applying",
+        "awaiting_reboot",
+        "installing",
+    ];
+    let ids: Vec<_> = statuses
+        .iter()
+        .enumerate()
+        .map(|(index, status)| {
+            let id = history_record(&fixture, index, status);
+            let directory = fixture.jobs.path(&id).unwrap();
+            write(
+                &directory.join("originals/etc/config/system"),
+                "saved original",
+            );
+            write(&directory.join("payload/etc/config/system"), "pending data");
+            write(&directory.join("task.log"), "diagnostics");
+            write(
+                &fixture.jobs.temporary.join(&id).join("backup.tar.gz"),
+                "temporary copy",
+            );
+            id
+        })
+        .collect();
+    let result = fixture.jobs.cleanup().unwrap();
+    assert_eq!(result["removed"].as_array().unwrap().len(), 3);
+    for (index, id) in ids.iter().enumerate() {
+        assert_eq!(fixture.jobs.path(id).unwrap().exists(), index >= 3);
+        assert_eq!(fixture.jobs.temporary.join(id).exists(), index >= 3);
+        if index >= 4 {
+            assert!(fixture.jobs.remove(id, id).is_err());
+        }
+    }
+    assert_eq!(fs::read(&fixture.backup).unwrap(), backup_before);
+    assert_eq!(
+        fs::read_to_string(current).unwrap(),
+        "current configuration"
+    );
+}
+
+#[test]
+fn unused_preview_removal_requires_confirmation_and_only_deletes_task_copies() {
+    let fixture = Fixture::new();
+    let backup_before = fs::read(&fixture.backup).unwrap();
+    let id = fixture.ready();
+    assert!(fixture.jobs.remove(&id, "wrong").is_err());
+    assert!(fixture.jobs.remove("../outside", "../outside").is_err());
+    assert!(fixture.jobs.path(&id).unwrap().exists());
+    fixture.jobs.remove(&id, &id).unwrap();
+    assert!(!fixture.jobs.path(&id).unwrap().exists());
+    assert!(!fixture.jobs.temporary.join(&id).exists());
+    assert_eq!(fs::read(&fixture.backup).unwrap(), backup_before);
+    assert!(crate::rpc::call(&fixture.jobs, "remove", &json!({"id": id})).is_err());
+    assert!(crate::rpc::call(&fixture.jobs, "cleanup", &json!({"path": "/"})).is_err());
+}
+
+#[test]
+fn cleanup_skips_task_writers_and_validator_locks() {
+    let fixture = Fixture::new();
+    let id = history_record(&fixture, 1, "complete");
+    let writer = fixture.jobs.lock(&format!("task-{id}"), false).unwrap();
+    assert_eq!(fixture.jobs.cleanup().unwrap()["skipped_busy"], 1);
+    assert!(fixture.jobs.remove(&id, &id).is_err());
+    drop(writer);
+    let validator = fixture.jobs.lock(&format!("validate-{id}"), false).unwrap();
+    assert_eq!(fixture.jobs.cleanup().unwrap()["skipped_busy"], 1);
+    drop(validator);
+    assert_eq!(fixture.jobs.cleanup().unwrap()["removed"], json!([id]));
+}
+
+#[test]
+fn task_limit_requires_manual_cleanup_without_pruning_existing_records() {
+    let fixture = Fixture::new();
+    for index in 0..MAX_TASKS {
+        history_record(&fixture, index, "complete");
+    }
+    let list = crate::rpc::list(&fixture.jobs).unwrap();
+    assert_eq!(list["tasks"].as_array().unwrap().len(), 10);
+    assert_eq!(list["total_tasks"], MAX_TASKS);
+    assert_eq!(list["max_tasks"], MAX_TASKS);
+    assert!(
+        fixture
+            .jobs
+            .prepare(&fixture.backup, &fixture.options)
+            .unwrap_err()
+            .to_string()
+            .contains("task limit")
+    );
+    assert_eq!(fixture.jobs.states().unwrap().len(), MAX_TASKS);
+    history_record(&fixture, MAX_TASKS, "complete");
+    assert!(
+        fixture
+            .jobs
+            .prepare(&fixture.backup, &fixture.options)
+            .is_err()
+    );
+    assert_eq!(fixture.jobs.states().unwrap().len(), MAX_TASKS + 1);
+    fixture.jobs.cleanup().unwrap();
+    assert!(
+        fixture
+            .jobs
+            .prepare(&fixture.backup, &fixture.options)
+            .is_ok()
+    );
+}
+
+#[test]
+fn cleanup_rejects_directory_aliases_and_usage_does_not_follow_them() {
+    let fixture = Fixture::new();
+    let id = history_record(&fixture, 1, "complete");
+    let external = fixture.root.join("outside");
+    write(&external.join("marker"), vec![b'x'; 65536]);
+    let before = fixture.jobs.usage().unwrap();
+    symlink(&external, fixture.jobs.path(&id).unwrap().join("external")).unwrap();
+    symlink(&external, fixture.jobs.temporary.join(&id)).unwrap();
+    let after = fixture.jobs.usage().unwrap();
+    assert_eq!(before["task_bytes"], after["task_bytes"]);
+    assert_eq!(after["temporary_bytes"], 0);
+    assert!(fixture.jobs.remove(&id, &id).is_err());
+    assert!(fixture.jobs.path(&id).unwrap().exists());
+    assert_eq!(fs::read(external.join("marker")).unwrap().len(), 65536);
+    fs::remove_file(fixture.jobs.temporary.join(&id)).unwrap();
+    let other_id = format!("{:032x}", 2);
+    save_json(
+        &external.join("state.json"),
+        &json!({"id": other_id, "status": "complete"}),
+    )
+    .unwrap();
+    symlink(&external, fixture.jobs.path(&other_id).unwrap()).unwrap();
+    assert!(fixture.jobs.remove(&other_id, &other_id).is_err());
+    assert!(external.join("state.json").exists());
+}
+
+#[test]
+fn log_limit_retains_recent_unicode_output_and_serializes_writers() {
+    let fixture = Fixture::new();
+    let id = history_record(&fixture, 1, "complete");
+    fixture.jobs.log(&id, &"旧日志\n".repeat(400000)).unwrap();
+    std::thread::scope(|scope| {
+        for writer in 0..4 {
+            let fixture = &fixture;
+            let id = &id;
+            scope.spawn(move || {
+                for index in 0..30 {
+                    fixture
+                        .jobs
+                        .log(
+                            id,
+                            &format!("writer-{writer}-{index}:{}", "测".repeat(6000)),
+                        )
+                        .unwrap();
+                }
+            });
+        }
+    });
+    fixture.jobs.log(&id, "latest diagnostic").unwrap();
+    let path = fixture.jobs.path(&id).unwrap().join("task.log");
+    let contents = fs::read_to_string(&path).unwrap();
+    assert!(contents.len() as u64 <= MAX_LOG_BYTES);
+    assert!(contents.ends_with("latest diagnostic\n"));
+    for line in contents.lines().filter(|line| line.contains("writer-")) {
+        assert_eq!(line.matches("writer-").count(), 1);
+        assert_eq!(line.matches('测').count(), 6000);
+    }
+    assert_eq!(fs::metadata(path).unwrap().mode() & 0o777, 0o600);
+}
+
+#[test]
+fn worker_bounds_legacy_logs_without_removing_history() {
+    let fixture = Fixture::new();
+    let id = history_record(&fixture, 1, "complete");
+    let log = fixture.jobs.path(&id).unwrap().join("task.log");
+    write(&log, "old record\n".repeat(300000));
+    fixture.jobs.worker(true).unwrap();
+    assert!(log.metadata().unwrap().len() <= MAX_LOG_BYTES);
+    assert_eq!(fixture.jobs.load(&id).unwrap()["status"], "complete");
+    assert!(fs::read_to_string(log).unwrap().contains("1 MiB limit"));
+}
+
+#[test]
+fn log_rotation_rejects_symlinks_and_special_files() {
+    let fixture = Fixture::new();
+    let id = history_record(&fixture, 1, "complete");
+    let marker = fixture.root.join("marker");
+    write(&marker, "original");
+    let path = fixture.jobs.path(&id).unwrap().join("task.log");
+    symlink(&marker, &path).unwrap();
+    assert!(fixture.jobs.log(&id, "overwrite").is_err());
+    assert_eq!(fs::read_to_string(&marker).unwrap(), "original");
+    fs::remove_file(&path).unwrap();
+    let name = std::ffi::CString::new(path.to_str().unwrap()).unwrap();
+    // SAFETY: name points to a NUL-terminated path in this test's private directory.
+    assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
+    assert!(fixture.jobs.log(&id, "special file").is_err());
 }
 
 #[test]

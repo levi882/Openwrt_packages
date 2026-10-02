@@ -13,6 +13,9 @@ const callPrepare = rpc.declare({ object: 'overlay-restore', method: 'prepare', 
 const callStatus = rpc.declare({ object: 'overlay-restore', method: 'status', params: [ 'id' ], expect: { '': {} } });
 const callApply = rpc.declare({ object: 'overlay-restore', method: 'apply', params: [ 'id', 'confirmation' ], expect: { '': {} } });
 const callRetry = rpc.declare({ object: 'overlay-restore', method: 'retry', params: [ 'id' ], expect: { '': {} } });
+const callUsage = rpc.declare({ object: 'overlay-restore', method: 'usage', expect: { '': {} } });
+const callCleanup = rpc.declare({ object: 'overlay-restore', method: 'cleanup', expect: { '': {} } });
+const callRemove = rpc.declare({ object: 'overlay-restore', method: 'remove', params: [ 'id', 'confirmation' ], expect: { '': {} } });
 const callCommit = rpc.declare({ object: 'uci', method: 'commit', params: [ 'config' ], expect: { '': {} } });
 
 const labels = {
@@ -33,6 +36,16 @@ function checked(result) {
 function uploadDisabled(task) {
     return !L.hasViewPermission() || (!!task &&
         [ 'validating', 'queued', 'preparing_packages', 'applying', 'awaiting_reboot', 'installing' ].indexOf(task.status) >= 0);
+}
+
+function formatSize(bytes) {
+    const units = [ 'B', 'KiB', 'MiB', 'GiB' ];
+    let value = Number(bytes || 0), unit = 0;
+    while (value >= 1024 && unit < units.length - 1) {
+        value /= 1024;
+        unit++;
+    }
+    return value.toFixed(unit ? 1 : 0) + ' ' + units[unit];
 }
 
 function openQuickFile(options) {
@@ -198,6 +211,7 @@ return view.extend({
     taskSnapshot: null,
     historySnapshot: null,
     refreshRevision: 0,
+    cleaning: false,
     load: function() {
         return Promise.all([ uci.load('overlay_restore'), callList().then(checked) ]);
     },
@@ -251,6 +265,48 @@ return view.extend({
         ]);
     },
 
+    showUsage: function() {
+        return callUsage().then(checked).then(function(usage) {
+            ui.showModal('任务文件占用', [
+                E('p', '任务文件：' + formatSize(usage.task_bytes) + '（包含记录、日志、待恢复文件和覆盖前保存的原件）。'),
+                E('p', '临时检查文件：' + formatSize(usage.temporary_bytes) + '。'),
+                E('p', '任务所在磁盘剩余空间：' + formatSize(usage.free_bytes) + '。'),
+                E('p', '这里显示文件大小，磁盘实际占用可能因压缩和文件系统而不同。'),
+                E('div', { 'class': 'right' }, [ E('button', { 'class': 'btn', 'click': ui.hideModal }, '关闭') ])
+            ]);
+        }).catch(function(error) { ui.addNotification(null, E('p', error.message)); });
+    },
+
+    confirmCleanup: function(task) {
+        const preview = task && task.status == 'ready';
+        ui.showModal(task ? (preview ? '取消并删除任务' : '删除任务') : '清理已结束的任务', [
+            E('p', task ? '将删除任务 ' + task.id.slice(0, 8) + ' 的记录、日志、暂存文件和覆盖前保存的原件。' :
+                '将删除所有已完成和检查失败任务的记录、日志、暂存文件及覆盖前保存的原件。等待确认和未完成的恢复任务会保留。'),
+            E('p', '路由器当前配置和磁盘上的原始备份文件会保留。删除的任务资料无法恢复。'),
+            preview ? E('p', '以后要使用这个备份恢复，需要重新检查备份。') : '',
+            E('div', { 'class': 'right' }, [
+                E('button', { 'class': 'btn', 'click': ui.hideModal }, '取消'), ' ',
+                E('button', { 'class': 'btn cbi-button-negative', 'click': ui.createHandlerFn(this, function() {
+                    this.cleaning = true;
+                    ++this.refreshRevision;
+                    return (task ? callRemove(task.id, task.id) : callCleanup()).then(checked).then(L.bind(function(result) {
+                        ui.hideModal();
+                        const removed = result.removed || [];
+                        if (removed.indexOf(this.taskId) >= 0)
+                            this.taskId = null;
+                        this.cleaning = false;
+                        return this.refresh().then(function() {
+                            ui.addNotification(null, E('p', '已清理 ' + removed.length + ' 个任务。' +
+                                (result.skipped_busy ? '正在使用的任务已跳过，可稍后再清理。' : '')), 'info');
+                        });
+                    }, this)).catch(function(error) {
+                        ui.addNotification(null, E('p', error.message));
+                    }).finally(L.bind(function() { this.cleaning = false; }, this));
+                }) }, task ? '删除此任务' : '清理已结束的任务')
+            ])
+        ]);
+    },
+
     renderTask: function(task) {
         const body = [ E('h3', labels[task.status] || task.status), E('p', '任务：' + task.id) ];
         if (task.error)
@@ -281,6 +337,9 @@ return view.extend({
                     ui.addNotification(null, E('p', error.message));
                 });
             }) }, '重试软件及服务修复'));
+        if (task.can_remove && L.hasViewPermission())
+            body.push(E('button', { 'class': 'btn cbi-button-negative', 'style': 'margin:4px',
+                'click': L.bind(this.confirmCleanup, this, task) }, task.status == 'ready' ? '取消并删除任务' : '删除任务'));
         const rows = Object.keys(task.packages || {}).map(function(name) {
             const item = task.packages[name];
             return E('tr', { 'class': 'tr' }, [ E('td', { 'class': 'td' }, name), E('td', { 'class': 'td' }, item.operation),
@@ -290,6 +349,7 @@ return view.extend({
             body.push(E('table', { 'class': 'table' }, [ E('tr', { 'class': 'tr table-titles' },
                 [ '软件包', '操作', '结果', '说明' ].map(function(title) { return E('th', { 'class': 'th' }, title); })) ].concat(rows)));
         body.push(E('details', { 'data-section': 'log', 'open': '' }, [ E('summary', '执行日志'),
+            E('p', '每个任务日志最多保留 1 MiB 的最新内容，此处显示末尾约 40 KB。删除任务时会一并删除日志。'),
             E('pre', { 'style': 'max-height:320px;overflow:auto;white-space:pre-wrap' }, task.log || '等待执行…') ]));
         return E('div', { 'class': 'cbi-section', 'data-task-id': task.id }, body);
     },
@@ -332,6 +392,8 @@ return view.extend({
     },
 
     refresh: function() {
+        if (this.cleaning)
+            return Promise.resolve();
         const revision = ++this.refreshRevision;
         return callList().then(checked).then(L.bind(function(result) {
             if (revision != this.refreshRevision)
@@ -339,7 +401,9 @@ return view.extend({
             const tasks = result.tasks || [];
             const snapshot = JSON.stringify(tasks.map(function(task) { return [ task.id, task.status ]; }));
             if (snapshot != this.historySnapshot) {
-                dom.content(this.history, [ E('h3', '最近的恢复任务') ].concat(tasks.map(L.bind(function(task) {
+                dom.content(this.history, [ E('h3', '最近的恢复任务'), this.historyInfo,
+                    E('div', { 'style': 'display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px' }, [ this.historyUsage, this.historyCleanup ])
+                ].concat(tasks.map(L.bind(function(task) {
                     return E('button', { 'class': 'btn', 'style': 'margin:4px', 'click': L.bind(function() {
                         this.taskId = task.id;
                         return this.refresh();
@@ -347,6 +411,11 @@ return view.extend({
                 }, this))));
                 this.historySnapshot = snapshot;
             }
+            dom.content(this.historyInfo, '显示最近 10 条，共 ' + result.total_tasks + ' / ' + result.max_tasks +
+                ' 个任务。达到上限后需清理已结束的任务，或取消不再使用的待确认任务，才能检查新备份。每个任务日志上限 ' + formatSize(result.max_log_bytes) + '。');
+            this.historyCleanup.disabled = !L.hasViewPermission() || !result.cleanup_count;
+            if (this.taskId && Array.isArray(result.task_ids) && result.task_ids.indexOf(this.taskId) < 0)
+                this.taskId = null;
             if (!this.taskId && result.tasks && result.tasks.length)
                 this.taskId = result.tasks[0].id;
             return this.taskId ? callStatus(this.taskId).then(checked) : null;
@@ -357,8 +426,11 @@ return view.extend({
             this.inspectLocal.disabled = this.upload.disabled;
             this.backupPath.disabled = this.upload.disabled;
             this.quickfile.disabled = this.upload.disabled;
-            if (!task)
+            if (!task) {
+                dom.content(this.status, []);
+                this.taskSnapshot = null;
                 return;
+            }
             this.updateTask(task);
             if (task.status == 'awaiting_reboot' && task.plan.settings.reboot && !task.reboot_failed && !this.reconnecting) {
                 this.reconnecting = true;
@@ -414,6 +486,10 @@ return view.extend({
             const task = (data[1].tasks || [])[0];
             this.status = E('div');
             this.history = E('div', { 'class': 'cbi-section' });
+            this.historyInfo = E('p', { 'class': 'cbi-section-descr' });
+            this.historyUsage = E('button', { 'class': 'btn', 'click': ui.createHandlerFn(this, 'showUsage') }, '查看占用');
+            this.historyCleanup = E('button', { 'class': 'btn cbi-button-negative', 'disabled': !L.hasViewPermission() || !data[1].cleanup_count,
+                'click': L.bind(this.confirmCleanup, this, null) }, '清理已结束的任务');
             this.upload = E('button', { 'class': 'btn cbi-button-action', 'disabled': uploadDisabled(task) || null,
                 'click': ui.createHandlerFn(this, 'inspect') }, '上传并检查备份');
             this.backupPath = E('input', { 'type': 'text', 'class': 'cbi-input-text', 'aria-label': '路由器备份路径',
