@@ -373,16 +373,20 @@ return view.extend({
 
     render: function(data) {
         const map = this.map = new form.Map('overlay_restore', '备份迁移恢复',
-            '上传备份或直接选择路由器上的 overlay / sysupgrade 备份，先检查恢复计划，再迁移配置和自定义文件。软件包会在重启后从当前软件源重新安装。');
+            '上传备份或直接选择路由器上的 overlay / sysupgrade 备份，先检查恢复计划，再迁移配置和自定义文件。软件包会在重启后从当前软件源重新安装。修改恢复选项后请重新检查备份，已有计划使用检查时的设置。');
         map.readonly = !L.hasViewPermission();
         const section = map.section(form.NamedSection, 'main', 'restore');
         section.tab('general', '恢复选项');
         section.tab('packages', '软件包');
         section.tab('services', '服务修复');
         section.tab('limits', '备份限制');
-        [ [ 'keep_current_extroot', '保留当前 extroot' ], [ 'keep_network', '保留当前网络、防火墙和 DHCP 配置' ],
-          [ 'restore_credentials', '恢复备份中的账号及 SSH 凭据' ], [ 'reboot', '迁移完成后自动重启' ] ].forEach(function(item) {
-            const option = section.taboption('general', form.Flag, item[0], item[1]);
+        [
+            [ 'keep_current_extroot', '保留当前 extroot', '勾选（默认）：保留当前用于系统的 extroot 挂载，恢复备份中的其他挂载项。不勾选：使用备份中的完整挂载配置。' ],
+            [ 'keep_network', '保留当前网络、防火墙和 DHCP 配置', '勾选：保留当前三项配置。不勾选（默认）：恢复备份中的对应配置，LAN 地址可能改变。Wi-Fi、SmartDNS 和 Nikki 配置不受此选项保护。' ],
+            [ 'restore_credentials', '恢复备份中的账号及 SSH 凭据', '勾选（默认）：恢复备份中的账号、密码和 SSH 凭据，重连时可能需要使用备份密码。不勾选：保留当前登录凭据。' ],
+            [ 'reboot', '迁移完成后自动重启', '勾选（默认）：配置迁移后自动重启，再安装软件并修复服务。不勾选：等待手动重启后继续。' ]
+        ].forEach(function(item) {
+            const option = section.taboption('general', form.Flag, item[0], item[1], item[2]);
             option.rmempty = false;
         });
         [ [ 'install_packages', '从当前源安装' ], [ 'myfeed_packages', '从 myfeed 安装' ], [ 'optional_packages', '从 myfeed 尝试安装' ],
