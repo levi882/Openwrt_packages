@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=overlay-restore
 PKG_VERSION:=0.2.0
-PKG_RELEASE:=6
+PKG_RELEASE:=7
 PKG_LICENSE:=MIT
 
 OVERLAY_RESTORE_CARGO?=cargo
@@ -15,12 +15,13 @@ define Package/overlay-restore
   SECTION:=utils
   CATEGORY:=Utilities
   TITLE:=Validated configuration migration from OpenWrt overlay backups
-  DEPENDS:=@x86_64 +apk-mbedtls +uci +uclient-fetch +libustream-mbedtls +ca-bundle
+  DEPENDS:=@x86_64 +apk-mbedtls +uci +uclient-fetch +libustream-mbedtls +ca-bundle +block-mount
 endef
 
 define Package/overlay-restore/description
   Inspect overlay or sysupgrade backups, migrate configuration and user files,
-  and resume package installation after reboot without replacing a mounted upper tree.
+  and resume package installation after reboot. Optional clean recovery switches
+  an internal or external overlay from RAM and retains the previous tree.
 endef
 
 define Package/overlay-restore/conffiles
@@ -54,10 +55,12 @@ exit 0
 endef
 
 define Package/overlay-restore/install
-	$(INSTALL_DIR) $(1)/usr/sbin $(1)/etc/init.d $(1)/etc/config
+	$(INSTALL_DIR) $(1)/usr/sbin $(1)/usr/libexec $(1)/lib/upgrade $(1)/etc/init.d $(1)/etc/config
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/target/x86_64-unknown-linux-musl/release/overlay-restore $(1)/usr/sbin/
 	$(INSTALL_BIN) ./files/etc/init.d/overlay-restore $(1)/etc/init.d/
 	$(INSTALL_DATA) ./files/etc/config/overlay_restore $(1)/etc/config/
+	$(INSTALL_BIN) ./files/usr/libexec/overlay-restore-switch $(1)/usr/libexec/
+	$(INSTALL_DATA) ./files/lib/upgrade/zz-overlay-restore.sh $(1)/lib/upgrade/
 	chmod 0600 $(1)/etc/config/overlay_restore
 endef
 

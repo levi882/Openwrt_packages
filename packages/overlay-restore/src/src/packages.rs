@@ -244,6 +244,7 @@ fn record(
 }
 
 pub fn install_packages(jobs: &Jobs, id: &str) -> Result<()> {
+    crate::clean::finalize(jobs, id)?;
     let mut state = jobs.load(id)?;
     let mut options: Options = read_json(&jobs.path(id)?.join("options.json"))?;
     options.validate()?;

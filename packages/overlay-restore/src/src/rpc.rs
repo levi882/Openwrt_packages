@@ -32,9 +32,9 @@ fn backup_path(jobs: &Jobs, value: &Value) -> Result<PathBuf> {
 pub fn call(jobs: &Jobs, method: &str, arguments: &Value) -> Result<Value> {
     let allowed: &[&str] = match method {
         "prepare" => &["path"],
-        "list" | "usage" | "cleanup" => &[],
+        "list" | "usage" | "cleanup" | "devices" => &[],
         "status" | "retry" => &["id"],
-        "apply" | "remove" => &["id", "confirmation"],
+        "apply" | "remove" | "rollback" | "discard_overlay" => &["id", "confirmation"],
         _ => bail!("Unknown recovery method"),
     };
     let arguments = arguments
@@ -62,6 +62,9 @@ pub fn call(jobs: &Jobs, method: &str, arguments: &Value) -> Result<Value> {
     if method == "list" {
         return list(jobs);
     }
+    if method == "devices" {
+        return crate::extroot::devices(jobs);
+    }
     if method == "usage" {
         return jobs.usage();
     }
@@ -83,6 +86,20 @@ pub fn call(jobs: &Jobs, method: &str, arguments: &Value) -> Result<Value> {
                 .and_then(Value::as_str)
                 .context("Explicit confirmation is required")?,
         );
+    }
+    if method == "rollback" || method == "discard_overlay" {
+        let confirmation = arguments
+            .get("confirmation")
+            .and_then(Value::as_str)
+            .context("Explicit confirmation is required")?;
+        let state = if method == "rollback" {
+            let state = crate::clean::rollback(jobs, id, confirmation)?;
+            jobs.start_worker()?;
+            state
+        } else {
+            crate::clean::discard(jobs, id, confirmation)?
+        };
+        return Ok(json!({"id": state["id"], "status": state["status"]}));
     }
     let state = if method == "apply" {
         jobs.apply(

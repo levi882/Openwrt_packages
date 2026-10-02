@@ -9,6 +9,7 @@
 'require fs';
 
 const callList = rpc.declare({ object: 'overlay-restore', method: 'list', expect: { '': {} } });
+const callDevices = rpc.declare({ object: 'overlay-restore', method: 'devices', expect: { '': {} } });
 const callPrepare = rpc.declare({ object: 'overlay-restore', method: 'prepare', params: [ 'path' ], expect: { '': {} } });
 const callStatus = rpc.declare({ object: 'overlay-restore', method: 'status', params: [ 'id' ], expect: { '': {} } });
 const callApply = rpc.declare({ object: 'overlay-restore', method: 'apply', params: [ 'id', 'confirmation' ], expect: { '': {} } });
@@ -16,13 +17,19 @@ const callRetry = rpc.declare({ object: 'overlay-restore', method: 'retry', para
 const callUsage = rpc.declare({ object: 'overlay-restore', method: 'usage', expect: { '': {} } });
 const callCleanup = rpc.declare({ object: 'overlay-restore', method: 'cleanup', expect: { '': {} } });
 const callRemove = rpc.declare({ object: 'overlay-restore', method: 'remove', params: [ 'id', 'confirmation' ], expect: { '': {} } });
+const callRollback = rpc.declare({ object: 'overlay-restore', method: 'rollback', params: [ 'id', 'confirmation' ], expect: { '': {} } });
+const callDiscardOverlay = rpc.declare({ object: 'overlay-restore', method: 'discard_overlay', params: [ 'id', 'confirmation' ], expect: { '': {} } });
 const callCommit = rpc.declare({ object: 'uci', method: 'commit', params: [ 'config' ], expect: { '': {} } });
 
 const labels = {
     validating: '正在检查备份', ready: '等待确认', queued: '等待执行', preparing_packages: '正在准备 DNS / 代理软件', applying: '正在迁移配置',
     awaiting_reboot: '配置已迁移，等待重启', installing: '正在安装软件并修复服务',
+    queued_clean: '等待准备干净 overlay', cleaning_overlay: '正在准备干净 overlay',
+    awaiting_clean_boot: '正在切换干净 overlay，等待重启', rolling_back: '正在准备回退 overlay',
+    awaiting_rollback_boot: '正在回退 overlay，等待重启', rolled_back: '已回退到清理前的环境',
     complete: '恢复完成', complete_with_warnings: '恢复完成，部分项目有警告',
-    failed_validation: '备份检查失败', failed_prepare: '网络软件准备失败，配置尚未修改', failed_apply: '配置迁移失败', failed_packages: '软件恢复尚未完成'
+    failed_validation: '备份检查失败', failed_prepare: '网络软件准备失败，配置尚未修改', failed_clean: '干净 overlay 准备或切换失败，当前环境保留',
+    failed_apply: '配置迁移失败', failed_packages: '软件恢复尚未完成'
 };
 
 function checked(result) {
@@ -35,7 +42,8 @@ function checked(result) {
 
 function uploadDisabled(task) {
     return !L.hasViewPermission() || (!!task &&
-        [ 'validating', 'queued', 'preparing_packages', 'applying', 'awaiting_reboot', 'installing' ].indexOf(task.status) >= 0);
+        [ 'validating', 'queued', 'queued_clean', 'cleaning_overlay', 'awaiting_clean_boot', 'rolling_back',
+          'awaiting_rollback_boot', 'preparing_packages', 'applying', 'awaiting_reboot', 'installing' ].indexOf(task.status) >= 0);
 }
 
 function formatSize(bytes) {
@@ -213,7 +221,8 @@ return view.extend({
     refreshRevision: 0,
     cleaning: false,
     load: function() {
-        return Promise.all([ uci.load('overlay_restore'), callList().then(checked) ]);
+        return Promise.all([ uci.load('overlay_restore'), callList().then(checked),
+            callDevices().then(checked).catch(function(error) { return { devices: [], error: error.message }; }) ]);
     },
 
     saveSettings: function() {
@@ -246,7 +255,12 @@ return view.extend({
         const settings = task.plan.settings;
         ui.showModal('确认恢复计划', [
             E('p', '将覆盖预览中的配置和自定义文件，并在重启后恢复所选软件包。'),
-            E('p', '当前内核、包管理状态、软件源、公钥和恢复工具会保留。'),
+            E('p', settings.clean_overlay ? '将使用当前固件的基础系统与包数据库，提前安装恢复工具及所需 DNS / 代理程序，再在干净环境中恢复配置。' :
+                '当前内核、包管理状态、软件源、公钥和恢复工具会保留。'),
+            settings.clean_overlay ? E('p', { 'class': 'alert-message warning' },
+                '将重建 ' + settings.overlay_target.device + '（' + settings.overlay_target.filesystem + '）上用于系统的 overlay，并停止服务、自动重启。旧 overlay 会保留以便回退；该分区上的其他目录会保留。') : '',
+            settings.extroot_uuid ? E('p', { 'class': 'alert-message warning' },
+                '将按 UUID ' + settings.extroot_uuid + ' 重新启用此分区为 extroot。当前系统保留，回退时恢复当前系统及原挂载配置。') : '',
             settings.restore_credentials ? E('p', { 'class': 'alert-message warning' }, '备份中的账号及 SSH 凭据会恢复，重连后可能需要使用备份中的密码登录。') : '',
             task.plan.lan_ip ? E('p', '备份中的 LAN 地址：' + task.plan.lan_ip) : '',
             E('p', settings.reboot ? '配置迁移完成后会自动重启。' : '配置迁移完成后需要手动重启。'),
@@ -261,6 +275,26 @@ return view.extend({
                         }, this)).catch(function(error) { ui.addNotification(null, E('p', error.message)); });
                     })
                 }, '执行恢复')
+            ])
+        ]);
+    },
+
+    confirmOverlayAction: function(task, rollback) {
+        ui.showModal(rollback ? '回退到清理前的环境' : '删除保留的另一份 overlay', [
+            E('p', rollback ? '将停止服务并自动重启，恢复清理前的完整 overlay。当前恢复后的环境会保留在暂存目录中。' :
+                '将永久删除暂存目录中的另一份 overlay，包含其中的软件、配置和自定义文件。删除后无法再通过它回退。'),
+            E('p', '暂存目录：' + task.clean_overlay.directory),
+            E('p', rollback ? '回退后使用清理前的网络地址和登录凭据。' : '当前正在使用的 overlay 和该分区上其他目录会保留。'),
+            E('div', { 'class': 'right' }, [
+                E('button', { 'class': 'btn', 'click': ui.hideModal }, '取消'), ' ',
+                E('button', { 'class': 'btn cbi-button-negative', 'click': ui.createHandlerFn(this, function() {
+                    this.cleaning = true;
+                    this.refreshRevision++;
+                    return (rollback ? callRollback : callDiscardOverlay)(task.id, task.id).then(checked)
+                        .then(L.bind(function() { ui.hideModal(); }, this))
+                        .catch(function(error) { ui.addNotification(null, E('p', error.message)); })
+                        .finally(L.bind(function() { this.cleaning = false; return this.refresh(); }, this));
+                }) }, rollback ? '回退并重启' : '永久删除暂存 overlay')
             ])
         ]);
     },
@@ -317,7 +351,8 @@ return view.extend({
             body.push(E('p', '备份 SHA256：' + plan.sha256));
             body.push(E('p', '将迁移 ' + plan.file_count + ' 个文件，已写入 ' + task.completed_count + ' 个。'));
             body.push(E('p', '自用软件源：' + plan.myfeed_repo));
-            body.push(E('p', settings.keep_current_extroot ? '保留当前系统的 extroot 挂载配置。' : '使用备份中的完整 fstab。'));
+            body.push(E('p', settings.extroot_uuid ? '将重新启用 ' + settings.overlay_target.device + ' 为 extroot，UUID：' + settings.extroot_uuid :
+                settings.keep_current_extroot ? '保留当前系统的 extroot 挂载配置。' : '使用备份中的完整 fstab。'));
             body.push(E('details', { 'data-section': 'files' }, [
                 E('summary', '待恢复文件（最多显示 200 项）'),
                 E('pre', { 'style': 'max-height:260px;overflow:auto' }, plan.files.map(function(file) { return file.path; }).join('\n'))
@@ -331,12 +366,23 @@ return view.extend({
         }
         if (task.status == 'ready' && L.hasViewPermission())
             body.push(E('button', { 'class': 'btn cbi-button-action', 'click': L.bind(this.confirm, this, task) }, '确认恢复计划'));
-        if ((task.status == 'failed_prepare' || task.status == 'failed_packages' || task.status == 'complete_with_warnings') && L.hasViewPermission())
+        if ((task.status == 'failed_clean' || task.status == 'failed_prepare' || task.status == 'failed_packages' || task.status == 'complete_with_warnings') && L.hasViewPermission())
             body.push(E('button', { 'class': 'btn', 'click': ui.createHandlerFn(this, function() {
                 return callRetry(task.id).then(checked).then(L.bind(this.refresh, this)).catch(function(error) {
                     ui.addNotification(null, E('p', error.message));
                 });
-            }) }, '重试软件及服务修复'));
+            }) }, task.status == 'failed_clean' ? '重试准备干净 overlay' : '重试软件及服务修复'));
+        if (task.clean_overlay && task.clean_overlay.retained) {
+            body.push(E('p', '另一份 overlay 保留在：' + task.clean_overlay.directory + '。清理任务历史不会删除这份环境。'));
+            if (task.clean_overlay.unavailable)
+                body.push(E('p', { 'class': 'alert-message warning' }, '暂存环境操作受限：' + task.clean_overlay.unavailable));
+            if (task.can_rollback_overlay && L.hasViewPermission())
+                body.push(E('button', { 'class': 'btn', 'style': 'margin:4px',
+                    'click': L.bind(this.confirmOverlayAction, this, task, true) }, '回退到清理前环境'));
+            if (task.can_discard_overlay && L.hasViewPermission())
+                body.push(E('button', { 'class': 'btn cbi-button-negative', 'style': 'margin:4px',
+                    'click': L.bind(this.confirmOverlayAction, this, task, false) }, '删除暂存 overlay'));
+        }
         if (task.can_remove && L.hasViewPermission())
             body.push(E('button', { 'class': 'btn cbi-button-negative', 'style': 'margin:4px',
                 'click': L.bind(this.confirmCleanup, this, task) }, task.status == 'ready' ? '取消并删除任务' : '删除任务'));
@@ -432,11 +478,14 @@ return view.extend({
                 return;
             }
             this.updateTask(task);
-            if (task.status == 'awaiting_reboot' && task.plan.settings.reboot && !task.reboot_failed && !this.reconnecting) {
+            if ([ 'awaiting_reboot', 'awaiting_clean_boot', 'awaiting_rollback_boot' ].indexOf(task.status) >= 0 &&
+                task.plan.settings.reboot && !task.reboot_failed && !this.reconnecting) {
                 this.reconnecting = true;
                 ui.showModal('正在等待重启', [ E('p', { 'class': 'spinning' }, '重启后重新登录此页面，可查看软件包恢复结果。') ]);
                 const addresses = [ window.location.host ];
-                if (task.plan.lan_ip)
+                if (task.status == 'awaiting_rollback_boot' && task.clean_overlay.original_lan)
+                    addresses.push(task.clean_overlay.original_lan);
+                else if (task.plan.lan_ip)
                     addresses.push(task.plan.lan_ip);
                 ui.awaitReconnect.apply(ui, addresses);
             }
@@ -453,7 +502,8 @@ return view.extend({
         section.tab('services', '服务修复');
         section.tab('limits', '备份限制');
         [
-            [ 'keep_current_extroot', '保留当前 extroot', '勾选（默认）：保留当前用于系统的 extroot 挂载，恢复备份中的其他挂载项。不勾选：使用备份中的完整挂载配置。' ],
+            [ 'clean_overlay', '恢复前重建干净 overlay', '勾选：自动准备当前固件的干净环境，停止服务后切换并重启恢复。可使用当前 overlay，也可选择升级后需要重新启用的外部分区。旧环境保留供回退，其他磁盘目录保留。需要保持「保留当前 extroot」和「自动重启」开启，并能访问软件源。默认关闭。' ],
+            [ 'keep_current_extroot', '保留当前 extroot', '勾选（默认）：保留当前用于系统的 extroot 挂载，恢复备份中的其他挂载项。不勾选：使用备份中的完整挂载配置。重建干净 overlay 时必须开启，挂载目标以「恢复目标 overlay」的选择为准。' ],
             [ 'keep_network', '保留当前网络、防火墙和 DHCP 配置', '勾选：保留当前三项配置。不勾选（默认）：恢复备份中的对应配置，LAN 地址可能改变。Wi-Fi、SmartDNS 和 Nikki 配置不受此选项保护。' ],
             [ 'restore_credentials', '恢复备份中的账号及 SSH 凭据', '勾选（默认）：恢复备份中的账号、密码和 SSH 凭据，重连时可能需要使用备份密码。不勾选：保留当前登录凭据。' ],
             [ 'reboot', '迁移完成后自动重启', '勾选（默认）：配置迁移后自动重启，再安装软件并修复服务。不勾选：等待手动重启后继续。' ]
@@ -461,6 +511,23 @@ return view.extend({
             const option = section.taboption('general', form.Flag, item[0], item[1], item[2]);
             option.rmempty = false;
         });
+        const target = section.taboption('general', form.ListValue, 'overlay_device', '恢复目标 overlay',
+            '选择当前 overlay，或需要重新启用为 extroot 的 ext4 / f2fs 分区。执行时会临时挂载未挂载分区，重建系统 upper/work，并按 UUID 启用 extroot；不格式化分区，其他目录保留。插入磁盘后刷新页面可重新读取分区。');
+        target.depends('clean_overlay', '1');
+        target.rmempty = false;
+        target.value('', data[2].current ? '当前 overlay（' + data[2].current.device + '）' : '当前 overlay');
+        const selectedDevice = uci.get('overlay_restore', 'main', 'overlay_device');
+        if (selectedDevice && data[2].current && selectedDevice == data[2].current.device)
+            target.value(selectedDevice, '当前 extroot（' + selectedDevice + '）');
+        (data[2].devices || []).forEach(function(device) {
+            target.value(device.device, device.device + ' · ' + device.filesystem +
+                (device.label ? ' · ' + device.label : '') + ' · UUID ' + device.uuid +
+                (device.mountpoint ? ' · ' + device.mountpoint : ' · 未挂载'));
+        });
+        if (selectedDevice && !target.keylist.includes(selectedDevice))
+            target.value(selectedDevice, selectedDevice + ' · 当前不可用，请重新选择');
+        if (data[2].error)
+            target.description += ' 分区读取失败：' + data[2].error;
         [ [ 'install_packages', '从当前源安装' ], [ 'myfeed_packages', '从 myfeed 安装' ], [ 'optional_packages', '从 myfeed 尝试安装' ],
           [ 'remove_packages', '移除预装 LuCI 软件包' ] ].forEach(function(item) {
             section.taboption('packages', form.DynamicList, item[0], item[1]);

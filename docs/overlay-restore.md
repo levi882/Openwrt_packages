@@ -53,15 +53,16 @@ overlay-restore cleanup
 overlay-restore remove TASK_ID --confirm TASK_ID
 ```
 
-`apply --no-reboot` 只迁移文件，需要手动重启后才进入软件恢复阶段。
+普通迁移模式下，`apply --no-reboot` 只迁移文件，需要手动重启后才进入软件恢复阶段。
 兼容入口 `sh router/restore_overlay.sh BACKUP` 会显示 JSON 计划并要求输入 `YES`；
 `--inspect` 只检查。旧的独立脚本已替换，必须先安装恢复后端。
 
 ## 迁移范围
 
-这是一份配置迁移计划，不是整盘还原。它通过挂载后的 `/` 写入文件，
-不会删除正在使用的 `/overlay/upper` 或 `/overlay/work`。
+这是一份配置迁移计划，不是整盘还原。默认通过挂载后的 `/` 写入文件，
 新系统中没有出现在备份里的文件仍然保留。
+可选的「恢复前重建干净 overlay」会准备新的 upper/work，停止服务并进入 RAM 后才切换，
+旧环境保留供回退；两种模式都不删除正在使用的 upper/work。
 普通文件采用备份中的权限位；覆盖现有文件时保留当前 UID/GID，新增文件由 root 拥有。
 不会从旧固件复制 UID/GID 或 setuid/setgid 权限。
 
@@ -105,8 +106,10 @@ overlay-restore remove TASK_ID --confirm TASK_ID
 正在检查、迁移、等待重启或安装软件的任务，以及恢复失败后尚未完成的任务会保留。
 删除任务会同时删除它的日志、暂存文件和覆盖前保存的原件；当前配置和磁盘上的原始备份文件不会删除。
 清理前请先保存仍需排查或人工回退的任务资料。任务不会在后台自动删除。
+干净恢复保留的另一份 overlay 不计入普通任务文件占用，也不随历史清理删除；
+对应任务受到保护，需要单独确认「删除暂存 overlay」后才能删除任务。
 
-流程为：
+普通迁移流程为：
 
 1. 校验压缩包 CRC、布局、路径、重复条目、展开大小和剩余空间，生成计划。
 2. 用户确认后校验文件摘要，把待恢复文件写入持久存储。
@@ -131,6 +134,52 @@ myfeed 在执行期间临时加 `@myfeed` 标签。原软件源内容、原有 w
 不会使用 `--force-broken-world`。必需软件失败会保留失败状态；可选软件失败单独显示警告。
 移除列表只接受 LuCI 应用、翻译、协议页面和主题，并禁止移除恢复工具及基础界面。
 
+## 恢复前重建干净 overlay
+
+此选项默认关闭。开启后，软件替代手动清理当前 overlay、重新挂载并运行恢复脚本的步骤，
+使用当前固件的基础系统和 APK 数据库重新建立环境。支持当前内部或外部 ext4/f2fs overlay，
+也支持升级后尚未启用 extroot 的外部 ext4/f2fs 分区。当前根文件系统须采用
+squashfs + OverlayFS 的标准 upper/work 布局；平铺 ext4 根文件系统和自定义布局不自动处理。
+
+使用时保持「保留当前 extroot」和「迁移完成后自动重启」开启，选择备份并重新检查计划。
+在「恢复目标 overlay」中选择当前 overlay，或按设备名、文件系统、标签和 UUID 选择外部分区。
+分区可以尚未挂载，也可以仅挂载为数据目录。分区列表不包含当前系统、ROM 和启动分区。
+启用新 extroot 时，确认页面显示目标设备和 UUID，软件自动按 UUID 更新挂载配置；
+无需手动格式化、重新挂载或运行脚本。
+仅保存设置或检查备份不会清理系统；确认「执行恢复」后按以下流程执行：
+
+1. 在选定文件系统的独立暂存目录准备新 upper/work；尚未挂载的外部分区临时挂载，原系统继续运行。
+2. 从当前固件的 APK 数据库及软件源安装恢复工具和所需 DNS/代理程序，再按计划写入备份配置及自定义文件。
+3. 通过 procd 停止服务、进入 RAM、卸载当前 overlay，再交换新旧 upper/work；需要时启用选定分区为 extroot，然后重启。此过程不刷写固件、不格式化磁盘。
+4. 新环境启动后继续安装计划中的软件、移除指定 LuCI 软件并修复服务；页面重新连接后可查看结果和日志。
+
+软件源不可访问、磁盘空间不足或布局不支持时，准备阶段失败并保留当前环境。
+需要有空间存放新环境，旧环境不会立即释放；`upper/work` 之外的外部磁盘目录保留。
+保留目录位于 `/overlay/.overlay-restore-clean/TASK_ID/`，同一时间只保留一组切换环境。
+完成后可选择「回退到清理前环境」并重启，或验证完成后确认「删除暂存 overlay」释放空间。
+回退后，恢复出的环境仍保留在暂存目录；删除暂存目录会永久删除其中的文件。
+新启用外部分区的任务回退到原系统，并恢复原 fstab 和外部分区旧环境；
+升级遗留的 extroot UUID 标记会备份并在切换时更新，回退时恢复。
+若此后升级了固件，自动回退会停用，仍可在设备布局匹配时删除暂存环境。
+
+命令行对应入口：
+
+```sh
+uci set overlay_restore.main.clean_overlay=1
+uci set overlay_restore.main.keep_current_extroot=1
+uci set overlay_restore.main.reboot=1
+# 默认使用当前 overlay。
+uci set overlay_restore.main.overlay_device=''
+# 升级后需要重新启用外部分区时，先列出分区，再将上一行改为所选设备。
+overlay-restore devices
+# 例如：uci set overlay_restore.main.overlay_device='/dev/sda1'
+uci commit overlay_restore
+overlay-restore inspect /mnt/backup/overlay_backup.tar.gz
+overlay-restore apply TASK_ID --confirm TASK_ID
+overlay-restore rollback TASK_ID --confirm TASK_ID
+overlay-restore discard-overlay TASK_ID --confirm TASK_ID
+```
+
 ## 配置与服务
 
 配置文件为 `/etc/config/overlay_restore`，主 section 为 `main`、类型为 `restore`。
@@ -154,7 +203,7 @@ IPTV Refresh 安装成功且当前数据目录存在时，才会配置并启用�
 不会自动创建缺失的外接磁盘根目录。Home Assistant 目录缺失时不写入它。
 令牌留空时生成随机令牌并存入任务私有选项及 `/etc/iptv-refresh/token`。
 
-RPC 仅暴露 `prepare/list/status/apply/retry`；`prepare` 可接收备份绝对路径，
+RPC 暴露 `prepare/list/status/apply/retry/devices/usage/cleanup/remove/rollback/discard_overlay`；`prepare` 可接收备份绝对路径，
 省略路径时仍使用固定上传临时文件名。直接选择的备份不会被删除，文件符号链接及特殊文件会被拒绝。
 ACL 的只读部分允许读取任务与配置、查询所选路径的文件属性。
 写入部分允许恢复和修改本应用配置，上传只允许固定临时文件名；

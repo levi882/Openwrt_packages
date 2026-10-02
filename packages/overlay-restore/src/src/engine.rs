@@ -18,6 +18,11 @@ use std::time::Duration;
 const ACTIVE: &[&str] = &[
     "validating",
     "queued",
+    "queued_clean",
+    "cleaning_overlay",
+    "rolling_back",
+    "awaiting_clean_boot",
+    "awaiting_rollback_boot",
     "preparing_packages",
     "applying",
     "awaiting_reboot",
@@ -26,7 +31,13 @@ const ACTIVE: &[&str] = &[
 pub const MAX_TASKS: usize = 20;
 pub const MAX_LOG_BYTES: u64 = 1024 * 1024;
 pub const LOG_TAIL_BYTES: u64 = 40000;
-const FINISHED: &[&str] = &["complete", "complete_with_warnings", "failed_validation"];
+const FINISHED: &[&str] = &[
+    "complete",
+    "complete_with_warnings",
+    "failed_validation",
+    "failed_clean",
+    "rolled_back",
+];
 
 pub struct Jobs {
     pub root: PathBuf,
@@ -174,6 +185,7 @@ impl Jobs {
 
     pub fn can_cleanup(state: &Value) -> bool {
         FINISHED.contains(&state["status"].as_str().unwrap_or(""))
+            && state["clean_overlay"]["retained"] != true
     }
 
     pub fn can_remove(state: &Value) -> bool {
@@ -281,6 +293,7 @@ impl Jobs {
 
     pub fn public(&self, id: &str, details: bool) -> Result<Value> {
         let mut state = self.load(id)?;
+        crate::clean::decorate(self, &mut state)?;
         state["can_remove"] = json!(Self::can_remove(&state));
         let completed = state
             .as_object_mut()
@@ -520,6 +533,7 @@ impl Jobs {
             let settings = serde_json::to_value(&options)?;
             let mut public = serde_json::Map::new();
             for key in [
+                "clean_overlay",
                 "keep_current_extroot",
                 "keep_network",
                 "restore_credentials",
@@ -531,6 +545,17 @@ impl Jobs {
                 "remove_packages",
             ] {
                 public.insert(key.to_owned(), settings[key].clone());
+            }
+            if options.clean_overlay {
+                let (target, activation) = crate::extroot::select(self, &options.overlay_device)?;
+                public.insert("overlay_target".into(), serde_json::to_value(target)?);
+                if let Some(activation) = activation {
+                    public.insert(
+                        "overlay_origin".into(),
+                        serde_json::to_value(activation.origin)?,
+                    );
+                    public.insert("extroot_uuid".into(), json!(activation.uuid));
+                }
             }
             plan.settings = Value::Object(public);
             plan.myfeed_repo = self.feed_url(&options)?;
@@ -573,6 +598,11 @@ impl Jobs {
         if state["status"] != "ready" {
             bail!("Task is not ready to apply");
         }
+        let mut options: Options = read_json(&task.join("options.json"))?;
+        if let Some(reboot) = reboot {
+            options.reboot = reboot;
+        }
+        options.validate()?;
         let payload = self.temporary.join(id).join("payload");
         if !payload.is_dir() {
             bail!("Preview expired after reboot; upload and inspect the backup again");
@@ -609,12 +639,12 @@ impl Jobs {
             let _ = fs::remove_dir_all(persistent);
             return Err(error);
         }
-        if let Some(reboot) = reboot {
-            let mut options: Options = read_json(&task.join("options.json"))?;
-            options.reboot = reboot;
-            save_json(&task.join("options.json"), &options)?;
-        }
-        state["status"] = json!("queued");
+        save_json(&task.join("options.json"), &options)?;
+        state["status"] = json!(if options.clean_overlay {
+            "queued_clean"
+        } else {
+            "queued"
+        });
         state["apply_boot"] = json!(self.current_boot()?);
         self.save(&mut state)?;
         fs::remove_dir_all(self.temporary.join(id))?;
@@ -801,6 +831,7 @@ impl Jobs {
         let status = state["status"].as_str().unwrap_or("");
         if ![
             "failed_prepare",
+            "failed_clean",
             "failed_packages",
             "complete_with_warnings",
         ]
@@ -808,7 +839,9 @@ impl Jobs {
         {
             bail!("Only package and service steps can be retried");
         }
-        state["status"] = json!(if status == "failed_prepare" {
+        state["status"] = json!(if status == "failed_clean" {
+            "queued_clean"
+        } else if status == "failed_prepare" {
             "queued"
         } else {
             "installing"
@@ -847,6 +880,13 @@ impl Jobs {
                 let status = state["status"].as_str().unwrap_or("");
                 match status {
                     "validating" => self.validate(id)?,
+                    "queued_clean" | "cleaning_overlay" => {
+                        crate::clean::prepare_and_switch(self, id)?
+                    }
+                    "rolling_back" => crate::clean::switch_back(self, id)?,
+                    "awaiting_clean_boot" | "awaiting_rollback_boot" => {
+                        crate::clean::interrupted(self, id)?
+                    }
                     "queued" | "preparing_packages" | "applying" => self.migrate(id)?,
                     "installing" => crate::packages::install_packages(self, id)?,
                     "awaiting_reboot"

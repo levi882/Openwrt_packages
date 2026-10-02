@@ -1,7 +1,7 @@
 #!/bin/sh
 case "$1" in
     list)
-        printf '%s\n' '{"prepare":{"path":""},"list":{},"usage":{},"cleanup":{},"remove":{"id":"","confirmation":""},"status":{"id":""},"apply":{"id":"","confirmation":""},"retry":{"id":""}}'
+        printf '%s\n' '{"prepare":{"path":""},"list":{},"devices":{},"usage":{},"cleanup":{},"remove":{"id":"","confirmation":""},"rollback":{"id":"","confirmation":""},"discard_overlay":{"id":"","confirmation":""},"status":{"id":""},"apply":{"id":"","confirmation":""},"retry":{"id":""}}'
         ;;
     call)
         /usr/sbin/overlay-restore rpc "$2" || true

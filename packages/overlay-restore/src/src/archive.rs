@@ -634,8 +634,14 @@ pub fn lan_address(text: &str) -> Result<String> {
             {
                 is_lan = true;
             }
-            if words.len() >= 3 && words[0] == "option" && words[1] == "ipaddr" {
-                address = words[2].split('/').next().unwrap_or("").to_owned();
+            if words.len() >= 3
+                && words[1] == "ipaddr"
+                && (words[0] == "option" || (words[0] == "list" && address.is_empty()))
+            {
+                let candidate = words[2].split('/').next().unwrap_or("");
+                if candidate.parse::<std::net::Ipv4Addr>().is_ok() {
+                    address = candidate.to_owned();
+                }
             }
         }
         if is_lan && !address.is_empty() {

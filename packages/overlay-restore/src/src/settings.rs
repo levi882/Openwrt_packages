@@ -22,6 +22,10 @@ pub const LIST_KEYS: &[&str] = &[
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Options {
+    #[serde(default)]
+    pub clean_overlay: bool,
+    #[serde(default)]
+    pub overlay_device: String,
     pub keep_current_extroot: bool,
     pub keep_network: bool,
     pub restore_credentials: bool,
@@ -162,6 +166,13 @@ pub fn validate(input: &Value) -> Result<Options> {
         };
     }
     let options: Options = serde_json::from_value(output)?;
+    if options.clean_overlay && (!options.keep_current_extroot || !options.reboot) {
+        bail!("Clean overlay recovery requires keeping the current extroot and automatic reboot");
+    }
+    if !options.overlay_device.is_empty() && !crate::extroot::valid_device(&options.overlay_device)
+    {
+        bail!("Select a block device from the overlay partition list");
+    }
     valid_url(&options.myfeed_repo, false)?;
     valid_url(&options.myfeed_key_url, false)?;
     valid_url(&options.iptv_public_url, true)?;

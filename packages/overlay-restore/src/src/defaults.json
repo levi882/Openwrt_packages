@@ -1,4 +1,6 @@
 {
+    "clean_overlay": false,
+    "overlay_device": "",
     "keep_current_extroot":  true,
     "keep_network":  false,
     "restore_credentials":  true,
