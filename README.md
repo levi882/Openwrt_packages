@@ -66,10 +66,10 @@ apk add luci-app-overlay-restore
 
 Open **System → 备份迁移恢复** to edit the recovery profile, upload an overlay or
 sysupgrade backup or select one already on the router, inspect the file/package
-plan, and explicitly confirm it. The IPTV and Home Assistant directories can
-also be selected through the router file browser or entered directly.
-If QuickFile is already available on the router, open its embedded page to manage
-backups or choose the IPTV and Home Assistant directories without leaving the restore page.
+plan, and explicitly confirm it. Router file and directory browsing uses the
+embedded QuickFile page. If QuickFile is already available on the router, use it
+to manage backups or choose the IPTV and Home Assistant directories without
+leaving the restore page. Paths can also be entered directly.
 Use **Save** at the bottom of the page to persist settings separately before
 inspecting a backup from the CLI. Saving settings does not start recovery.
 The same backend is available from the router CLI:

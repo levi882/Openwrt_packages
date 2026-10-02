@@ -33,14 +33,6 @@ function uploadDisabled(task) {
         [ 'validating', 'queued', 'preparing_packages', 'applying', 'awaiting_reboot', 'installing' ].indexOf(task.status) >= 0);
 }
 
-function routerPicker(directory, disabled) {
-    return new ui.FileUpload(null, {
-        root_directory: '/', directory_select: directory, show_hidden: true,
-        enable_upload: false, enable_remove: false, enable_download: false,
-        directory_create: false, disabled: disabled
-    });
-}
-
 function openQuickFile(options) {
     if (!options.enabled())
         return Promise.resolve();
@@ -139,17 +131,13 @@ function openQuickFile(options) {
 
 const DirectoryPath = form.Value.extend({
     renderWidget: function(sectionId, optionIndex, cfgvalue) {
-        const picker = routerPicker(true, this.map.readonly);
-        return Promise.all([
-            this.super('renderWidget', [ sectionId, optionIndex, cfgvalue ]), picker.render()
-        ]).then(L.bind(function(nodes) {
+        return Promise.resolve(this.super('renderWidget', [ sectionId, optionIndex, cfgvalue ])).then(L.bind(function(inputNode) {
             const select = L.bind(function(path) {
                 const input = this.getUIElement(sectionId);
                 input.setValue(path);
                 input.triggerValidation();
                 input.node.dispatchEvent(new CustomEvent('widget-change', { bubbles: true }));
             }, this);
-            nodes[1].addEventListener('cbi-fileupload-select', function(ev) { select(ev.detail.path); });
             const quickfile = E('button', {
                 'class': 'btn', 'disabled': this.map.readonly || null,
                 'click': ui.createHandlerFn(this, function() {
@@ -159,7 +147,7 @@ const DirectoryPath = form.Value.extend({
                     });
                 })
             }, '打开 QuickFile 选择目录');
-            return E('div', {}, [ nodes[0], nodes[1], quickfile ]);
+            return E('div', {}, [ inputNode, E('div', { 'style': 'margin-top:8px' }, quickfile) ]);
         }, this));
     }
 });
@@ -277,7 +265,6 @@ return view.extend({
             this.upload.disabled = uploadDisabled(task);
             this.inspectLocal.disabled = this.upload.disabled;
             this.backupPath.disabled = this.upload.disabled;
-            this.backupBrowser.querySelector('button').disabled = this.upload.disabled;
             this.quickfile.disabled = this.upload.disabled;
             if (!task)
                 return;
@@ -315,7 +302,7 @@ return view.extend({
         section.taboption('packages', form.Value, 'myfeed_key_url', 'myfeed 公钥地址');
         section.taboption('services', form.Flag, 'iptv_enable', '恢复 IPTV Refresh').rmempty = false;
         [ [ 'iptv_repo_root', 'IPTV 数据目录' ], [ 'ha_config_root', 'Home Assistant 配置目录' ] ].forEach(function(item) {
-            section.taboption('services', DirectoryPath, item[0], item[1], '可直接填写绝对路径，或浏览路由器目录选择。');
+            section.taboption('services', DirectoryPath, item[0], item[1], '通过 QuickFile 选择目录，也可直接填写绝对路径。');
         });
         [ [ 'iptv_refresh_iface', 'IPTV 网络接口' ], [ 'iptv_refresh_host', '刷新服务监听地址' ],
           [ 'iptv_refresh_port', '刷新服务端口' ], [ 'iptv_public_url', 'IPTV 对外地址' ] ].forEach(function(item) {
@@ -328,8 +315,7 @@ return view.extend({
         [ [ 'max_upload_mb', '备份文件大小上限（MiB）', 'range(1,1024)' ], [ 'max_expanded_mb', '展开大小上限（MiB）', 'range(8,4096)' ] ].forEach(function(item) {
             section.taboption('limits', form.Value, item[0], item[1]).datatype = item[2];
         });
-        this.backupPicker = routerPicker(false, uploadDisabled((data[1].tasks || [])[0]));
-        return Promise.all([ map.render(), this.backupPicker.render() ]).then(L.bind(function(nodes) {
+        return map.render().then(L.bind(function(formNode) {
             const task = (data[1].tasks || [])[0];
             this.status = E('div');
             this.history = E('div', { 'class': 'cbi-section' });
@@ -337,11 +323,7 @@ return view.extend({
                 'click': ui.createHandlerFn(this, 'inspect') }, '上传并检查备份');
             this.backupPath = E('input', { 'type': 'text', 'class': 'cbi-input-text', 'aria-label': '路由器备份路径',
                 'placeholder': '/mnt/backup/overlay_backup.tar.gz', 'disabled': uploadDisabled(task) || null,
-                'style': 'width:100%;max-width:640px' });
-            this.backupBrowser = nodes[1];
-            this.backupBrowser.addEventListener('cbi-fileupload-select', L.bind(function(ev) {
-                this.backupPath.value = ev.detail.path;
-            }, this));
+                'style': 'width:100%;max-width:640px;box-sizing:border-box' });
             this.inspectLocal = E('button', { 'class': 'btn cbi-button-action', 'disabled': uploadDisabled(task) || null,
                 'click': ui.createHandlerFn(this, 'inspectRouter') }, '检查路由器上的备份');
             this.quickfile = E('button', {
@@ -356,10 +338,11 @@ return view.extend({
             }, '打开 QuickFile 管理备份');
             this.taskId = task ? task.id : null;
             poll.add(L.bind(function() { return this.refresh().catch(function() {}); }, this), 3);
-            return E('div', {}, [ nodes[0], E('div', { 'class': 'cbi-section' }, [
+            return E('div', {}, [ formNode, E('div', { 'class': 'cbi-section' }, [
                 E('h3', '选择备份'), this.upload,
-                E('p', '或选择路由器磁盘上的备份文件，也可直接输入路径。检查后原文件会保留。'),
-                this.backupPath, this.backupBrowser, this.quickfile, ' ', this.inspectLocal
+                E('p', '通过 QuickFile 选择路由器上的备份，也可直接输入绝对路径。检查后原文件会保留。'),
+                this.backupPath,
+                E('div', { 'style': 'display:flex;flex-wrap:wrap;gap:8px;margin-top:8px' }, [ this.quickfile, this.inspectLocal ])
             ]), this.status, this.history ]);
         }, this));
     },
