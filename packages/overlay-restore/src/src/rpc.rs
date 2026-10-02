@@ -32,7 +32,7 @@ fn backup_path(jobs: &Jobs, value: &Value) -> Result<PathBuf> {
 pub fn call(jobs: &Jobs, method: &str, arguments: &Value) -> Result<Value> {
     let allowed: &[&str] = match method {
         "prepare" => &["path"],
-        "list" | "usage" | "cleanup" => &[],
+        "list" | "usage" | "cleanup" | "devices" => &[],
         "status" | "retry" => &["id"],
         "apply" | "remove" | "rollback" | "discard_overlay" => &["id", "confirmation"],
         _ => bail!("Unknown recovery method"),
@@ -61,6 +61,9 @@ pub fn call(jobs: &Jobs, method: &str, arguments: &Value) -> Result<Value> {
     }
     if method == "list" {
         return list(jobs);
+    }
+    if method == "devices" {
+        return crate::extroot::devices(jobs);
     }
     if method == "usage" {
         return jobs.usage();

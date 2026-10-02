@@ -2,6 +2,7 @@
 //! after procd has stopped services and pivoted to RAM. The old tree is retained.
 use crate::archive::Plan;
 use crate::engine::Jobs;
+use crate::extroot::{Activation, Target};
 use crate::settings::Options;
 use crate::util::{
     atomic_copy, atomic_write, digest_file, disk_free, mkdir, now, random_hex, read_json,
@@ -24,6 +25,7 @@ const MARKER: &str = "etc/overlay-restore/clean-id";
 const RAM_MANIFEST: &str = "/tmp/overlay-restore-stage.json";
 const RAM_COMMAND: &str = "/usr/sbin/overlay-restore clean-stage /tmp/overlay-restore-stage.json";
 const DEVICE_MOUNT: &str = "/overlay-restore-device";
+const ORIGIN_MOUNT: &str = "/overlay-restore-origin";
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct LoopDevice {
@@ -52,14 +54,14 @@ impl Overlay {
 }
 
 #[derive(Clone, Debug)]
-struct Mount {
-    device: String,
-    identity: String,
-    point: String,
-    root: String,
-    filesystem: String,
-    options: String,
-    super_options: String,
+pub(crate) struct Mount {
+    pub device: String,
+    pub identity: String,
+    pub point: String,
+    pub root: String,
+    pub filesystem: String,
+    pub options: String,
+    pub super_options: String,
 }
 
 fn unescape(text: &str) -> Result<String> {
@@ -86,7 +88,7 @@ fn unescape(text: &str) -> Result<String> {
     Ok(String::from_utf8(bytes)?)
 }
 
-fn mounts(text: &str) -> Result<Vec<Mount>> {
+pub(crate) fn mounts(text: &str) -> Result<Vec<Mount>> {
     text.lines()
         .map(|line| {
             let fields: Vec<_> = line.split_whitespace().collect();
@@ -161,7 +163,7 @@ fn layout(entries: &[Mount]) -> Result<&Mount> {
     Ok(overlay)
 }
 
-fn regular_dir(path: &Path) -> Result<()> {
+pub(crate) fn regular_dir(path: &Path) -> Result<()> {
     let metadata = fs::symlink_metadata(path)?;
     if !metadata.is_dir() || path.canonicalize()? != path {
         bail!(
@@ -172,7 +174,7 @@ fn regular_dir(path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn block_identity(path: &Path) -> Result<String> {
+pub(crate) fn block_identity(path: &Path) -> Result<String> {
     let metadata = fs::metadata(path)?;
     if !metadata.file_type().is_block_device() {
         bail!("Overlay source is not a block device: {}", path.display());
@@ -243,6 +245,8 @@ struct Journal {
     phase: String,
     #[serde(default)]
     original_lan: String,
+    #[serde(default)]
+    activation: Option<Activation>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -251,6 +255,8 @@ struct Transition {
     nonce: String,
     overlay: Overlay,
     rollback: bool,
+    #[serde(default)]
+    activation: Option<Activation>,
 }
 
 fn valid_id(id: &str) -> bool {
@@ -281,6 +287,7 @@ fn summary(journal: &Journal) -> Value {
         "retained": true, "phase": journal.phase, "device": journal.overlay.device,
         "filesystem": journal.overlay.filesystem,
         "original_lan": journal.original_lan,
+        "activates_extroot": journal.activation.is_some(),
         "directory": format!("/overlay/{STORE}/{}", journal.id),
     })
 }
@@ -546,17 +553,27 @@ fn prepare(jobs: &Jobs, id: &str) -> Result<Journal> {
     let mut options: Options = read_json(&task.join("options.json"))?;
     options.myfeed_repo = plan.myfeed_repo.clone();
     options.validate()?;
-    let overlay = discover(&jobs.root)?;
+    let (overlay, mut activation) = crate::extroot::select(jobs, &options.overlay_device)?;
     let inspected: Overlay = serde_json::from_value(plan.settings["overlay_target"].clone())?;
     if overlay != inspected {
         bail!("Overlay or firmware changed after inspection; inspect the backup again");
+    }
+    if let Some(activation) = &activation {
+        let origin: Overlay = serde_json::from_value(plan.settings["overlay_origin"].clone())?;
+        if activation.origin != origin || plan.settings["extroot_uuid"] != activation.uuid {
+            bail!("Extroot selection changed after inspection; inspect the backup again");
+        }
     }
     for state in jobs.states()? {
         if state["id"] != id && !Jobs::can_cleanup(&state) && state["status"] != "ready" {
             bail!("Finish other recovery tasks before rebuilding overlay");
         }
     }
-    let base = directory(&jobs.root.join("overlay"), id)?;
+    let target = Target::open(jobs, &overlay, id)?;
+    if let Some(activation) = &mut activation {
+        activation.original_extroot_uuid = crate::extroot::boot_marker(&target.path)?;
+    }
+    let base = directory(&target.path, id)?;
     let store = base.parent().context("Missing clean store")?;
     if store.exists()
         && fs::read_dir(store)?.any(|entry| entry.is_ok_and(|entry| entry.path() != base))
@@ -570,19 +587,31 @@ fn prepare(jobs: &Jobs, id: &str) -> Result<Journal> {
         if journal.id != id || journal.overlay != overlay {
             bail!("Clean recovery journal changed");
         }
-        if journal.phase == "prepared" {
+        if journal.phase == "prepared"
+            || (journal.phase == "switched" && journal.activation.is_some())
+        {
             return Ok(journal);
         }
         bail!("Discard the incomplete clean environment before retrying");
     }
-    if disk_free(&jobs.root.join("overlay"))? < 2 * plan.selected_bytes + 24 * 1024 * 1024 {
+    if disk_free(&target.path)? < 2 * plan.selected_bytes + 24 * 1024 * 1024 {
         bail!("Insufficient overlay space to retain the old environment and prepare a clean one");
+    }
+    if activation.is_some() {
+        for name in ["upper", "work"] {
+            let path = target.path.join(name);
+            if !path.exists() {
+                mkdir(&path, 0o755)?;
+            }
+            regular_dir(&path)?;
+        }
     }
     mkdir(&base, 0o700)?;
     let mut journal = Journal {
         id: id.into(),
         nonce: random_hex(16)?,
         overlay,
+        activation,
         phase: "building".into(),
         original_lan: fs::read_to_string(jobs.root.join("etc/config/network"))
             .ok()
@@ -590,6 +619,7 @@ fn prepare(jobs: &Jobs, id: &str) -> Result<Journal> {
             .unwrap_or_default(),
     };
     save_json(&base.join("journal.json"), &journal)?;
+    save_json(&task.join("clean-overlay.json"), &journal)?;
     let mut state = jobs.load(id)?;
     state["clean_overlay"] = summary(&journal);
     state["status"] = json!("cleaning_overlay");
@@ -607,10 +637,19 @@ fn prepare(jobs: &Jobs, id: &str) -> Result<Journal> {
         }
         atomic_copy(&new_destination(&upper, &entry.path)?, &source, entry.mode)?;
     }
+    if let Some(activation) = &journal.activation {
+        let fstab = upper.join("etc/config/fstab");
+        let current = fs::read_to_string(&fstab).unwrap_or_default();
+        atomic_write(
+            &fstab,
+            crate::extroot::configured_fstab(&current, &activation.uuid)?.as_bytes(),
+            0o600,
+        )?;
+    }
     // Task payloads/originals are immutable and live on the same physical
     // filesystem. Hard links retain history without copying entire old trees.
     copy_tree(
-        &jobs.root.join("overlay/upper/etc/overlay-restore/jobs"),
+        &jobs.directory,
         &upper.join("etc/overlay-restore/jobs"),
         true,
     )?;
@@ -631,6 +670,7 @@ fn prepare(jobs: &Jobs, id: &str) -> Result<Journal> {
     atomic_write(&upper.join(MARKER), id.as_bytes(), 0o600)?;
     journal.phase = "prepared".into();
     save_json(&base.join("journal.json"), &journal)?;
+    save_json(&task.join("clean-overlay.json"), &journal)?;
     state = jobs.load(id)?;
     state["status"] = json!("awaiting_reboot");
     state["completed_files"] = json!(
@@ -657,7 +697,7 @@ fn prepare(jobs: &Jobs, id: &str) -> Result<Journal> {
         "Clean environment prepared; stopping services and switching from RAM before reboot.",
     )?;
     drop(reserve);
-    sync_filesystem(&jobs.root.join("overlay"))?;
+    sync_filesystem(&target.path)?;
     Ok(journal)
 }
 
@@ -667,6 +707,7 @@ fn transition(jobs: &Jobs, journal: &Journal, rollback: bool) -> Result<()> {
         nonce: journal.nonce.clone(),
         overlay: journal.overlay.clone(),
         rollback,
+        activation: journal.activation.clone(),
     };
     save_json(
         &jobs.root.join(RAM_MANIFEST.trim_start_matches('/')),
@@ -721,15 +762,40 @@ pub fn prepare_and_switch(jobs: &Jobs, id: &str) -> Result<()> {
     Ok(())
 }
 
-fn read_journal(jobs: &Jobs, id: &str) -> Result<(PathBuf, Journal)> {
-    jobs.path(id)?;
-    let overlay = discover(&jobs.root)?;
-    let base = directory(&jobs.root.join("overlay"), id)?;
+fn read_journal(jobs: &Jobs, id: &str) -> Result<(Target, PathBuf, Journal)> {
+    let task = jobs.path(id)?;
+    let current = discover(&jobs.root)?;
+    let cached: Option<Journal> = read_json(&task.join("clean-overlay.json")).ok();
+    let overlay = if let Some(cached) = &cached {
+        if cached.id != id || !valid_id(&cached.nonce) {
+            bail!("Invalid retained overlay record");
+        }
+        if !cached.overlay.same_device(&current) {
+            let activation = cached
+                .activation
+                .as_ref()
+                .context("Retained overlay device changed")?;
+            if !activation.origin.same_device(&current) {
+                bail!("The original system overlay changed");
+            }
+            crate::extroot::verify_uuid(jobs, &cached.overlay.device, &activation.uuid)?;
+        }
+        cached.overlay.clone()
+    } else {
+        current
+    };
+    let target = Target::open(jobs, &overlay, id)?;
+    let base = directory(&target.path, id)?;
     let journal: Journal = read_json(&base.join("journal.json"))?;
     if journal.id != id || !journal.overlay.same_device(&overlay) || !valid_id(&journal.nonce) {
         bail!("Retained overlay does not match the current device");
     }
-    Ok((base, journal))
+    if let Some(cached) = cached
+        && (cached.nonce != journal.nonce || cached.activation != journal.activation)
+    {
+        bail!("Retained overlay identity changed");
+    }
+    Ok((target, base, journal))
 }
 
 pub fn decorate(jobs: &Jobs, state: &mut Value) -> Result<()> {
@@ -739,7 +805,20 @@ pub fn decorate(jobs: &Jobs, state: &mut Value) -> Result<()> {
         return Ok(());
     }
     let id = state["id"].as_str().context("Task has no ID")?.to_owned();
-    let (base, journal) = match read_journal(jobs, &id) {
+    // Status polling never mounts an inactive disk. The private cached journal
+    // locates it; a confirmed action reopens the actual filesystem and nonce.
+    if let Ok(cached) = read_json::<Journal>(&jobs.path(&id)?.join("clean-overlay.json"))
+        && let Some(activation) = &cached.activation
+        && discover(&jobs.root).is_ok_and(|current| activation.origin.same_device(&current))
+    {
+        state["clean_overlay"]["directory"] =
+            json!(format!("{}:/{STORE}/{id}", cached.overlay.device));
+        state["can_discard_overlay"] = json!(
+            ["rolled_back", "failed_clean"].contains(&state["status"].as_str().unwrap_or(""))
+        );
+        return Ok(());
+    }
+    let (_target, base, journal) = match read_journal(jobs, &id) {
         Ok(value) => value,
         Err(error) => {
             state["clean_overlay"]["unavailable"] = json!(error.to_string());
@@ -780,7 +859,7 @@ pub fn finalize(jobs: &Jobs, id: &str) -> Result<()> {
     if state["clean_overlay"]["retained"] != true {
         return Ok(());
     }
-    let (base, mut journal) = read_journal(jobs, id)?;
+    let (_target, base, mut journal) = read_journal(jobs, id)?;
     if digest_file(&jobs.root.join("rom/etc/openwrt_release"))? != journal.overlay.firmware {
         bail!("Firmware changed during clean recovery; package operations were stopped");
     }
@@ -789,6 +868,7 @@ pub fn finalize(jobs: &Jobs, id: &str) -> Result<()> {
     }
     journal.phase = "switched".into();
     save_json(&base.join("journal.json"), &journal)?;
+    save_json(&jobs.path(id)?.join("clean-overlay.json"), &journal)?;
     state["clean_overlay"] = summary(&journal);
     jobs.save(&mut state)
 }
@@ -833,7 +913,8 @@ pub fn rollback(jobs: &Jobs, id: &str, confirmation: &str) -> Result<Value> {
 }
 
 pub fn switch_back(jobs: &Jobs, id: &str) -> Result<()> {
-    let result = read_journal(jobs, id).and_then(|(_, journal)| transition(jobs, &journal, true));
+    let result =
+        read_journal(jobs, id).and_then(|(_, _, journal)| transition(jobs, &journal, true));
     if let Err(error) = result {
         let mut state = jobs.load(id)?;
         state["status"] = state["before_rollback"].clone();
@@ -874,7 +955,7 @@ pub fn discard(jobs: &Jobs, id: &str, confirmation: &str) -> Result<Value> {
     if state["can_discard_overlay"] != true {
         bail!("Finish recovery or roll back before discarding the alternate overlay");
     }
-    let (base, journal) = read_journal(jobs, id)?;
+    let (_target, base, journal) = read_journal(jobs, id)?;
     let entries = mounts(&fs::read_to_string(jobs.root.join("proc/self/mountinfo"))?)?;
     if has_snapshot_mount(&entries, &journal.overlay.identity, id) {
         bail!("The retained overlay contains a mount; unmount it before discarding");
@@ -933,7 +1014,7 @@ fn swap(overlay: &Path, journal: &mut Journal, rollback: bool) -> Result<()> {
         // Work is scratch space. Exchange it first; the atomic upper exchange
         // is the commit point, so a power loss never leaves /upper absent.
         exchange(&overlay.join("work"), &base.join("alternate-work"))?;
-        if rollback {
+        if rollback && journal.activation.is_none() {
             let path = alternate
                 .join("etc/overlay-restore/jobs")
                 .join(&journal.id)
@@ -1000,7 +1081,7 @@ struct LoopConfig {
     reserved: [u64; 8],
 }
 
-fn restore_loop(overlay: &Overlay) -> Result<Option<File>> {
+pub(crate) fn restore_loop(overlay: &Overlay) -> Result<Option<File>> {
     let Some(specification) = &overlay.loop_device else {
         return Ok(None);
     };
@@ -1053,6 +1134,67 @@ fn restore_loop(overlay: &Overlay) -> Result<Option<File>> {
     Ok(Some(loop_file))
 }
 
+fn update_origin_files(origin: &Path, journal: &Journal, rollback: bool) -> Result<()> {
+    let activation = journal
+        .activation
+        .as_ref()
+        .context("No extroot activation")?;
+    regular_dir(&origin.join("upper"))?;
+    let fstab = origin.join("upper/etc/config/fstab");
+    if rollback {
+        // Commit the old-system result before disabling extroot, so a power
+        // loss after changing fstab boots the retained original environment.
+        let state_path = origin
+            .join("upper/etc/overlay-restore/jobs")
+            .join(&journal.id)
+            .join("state.json");
+        let mut state: Value = read_json(&state_path)?;
+        state["status"] = json!("rolled_back");
+        state["error"] = json!("");
+        state["updated"] = json!(now());
+        state["clean_overlay"] = summary(journal);
+        state["clean_overlay"]["phase"] = json!("rolled_back");
+        save_json(&state_path, &state)?;
+        atomic_write(&fstab, activation.original_fstab.as_bytes(), 0o600)?;
+    } else {
+        atomic_write(
+            &fstab,
+            crate::extroot::configured_fstab(&activation.original_fstab, &activation.uuid)?
+                .as_bytes(),
+            0o600,
+        )?;
+    }
+    sync_filesystem(origin)
+}
+
+fn update_origin(journal: &Journal, rollback: bool) -> Result<()> {
+    let activation = journal
+        .activation
+        .as_ref()
+        .context("No extroot activation")?;
+    if activation.origin.identity == journal.overlay.identity {
+        bail!("Original and selected overlay must be different devices");
+    }
+    let _loop_file = restore_loop(&activation.origin)?;
+    if block_identity(Path::new(&activation.origin.device))? != activation.origin.identity {
+        bail!("Original overlay block device changed");
+    }
+    let target = Path::new(ORIGIN_MOUNT);
+    mkdir(target, 0o700)?;
+    crate::extroot::mount_device(
+        Path::new(&activation.origin.device),
+        target,
+        &activation.origin.filesystem,
+    )?;
+    let result = update_origin_files(target, journal, rollback);
+    let target_c = CString::new(ORIGIN_MOUNT)?;
+    // SAFETY: target_c refers to the original-system mount owned above.
+    unsafe {
+        libc::umount(target_c.as_ptr());
+    }
+    result
+}
+
 pub fn run_stage(path: &Path) -> Result<()> {
     if path != Path::new(RAM_MANIFEST) || unsafe { libc::geteuid() } != 0 {
         bail!("Clean stage is private to the prepared RAM transition");
@@ -1082,6 +1224,20 @@ pub fn run_stage(path: &Path) -> Result<()> {
     {
         bail!("Invalid RAM transition manifest");
     }
+    if let Some(activation) = &transition.activation {
+        let output = std::process::Command::new("/sbin/block")
+            .args(["info", &transition.overlay.device])
+            .output()?;
+        if !output.status.success()
+            || !crate::extroot::matches_uuid(
+                &String::from_utf8(output.stdout)?,
+                &transition.overlay.device,
+                &activation.uuid,
+            )?
+        {
+            bail!("Selected external filesystem UUID changed before activation");
+        }
+    }
     let _loop_file = restore_loop(&transition.overlay)?;
     if block_identity(Path::new(&transition.overlay.device))? != transition.overlay.identity {
         bail!("Overlay block device changed before switching");
@@ -1110,10 +1266,26 @@ pub fn run_stage(path: &Path) -> Result<()> {
         if journal.id != transition.id
             || journal.nonce != transition.nonce
             || journal.overlay != transition.overlay
+            || journal.activation != transition.activation
         {
             bail!("Mounted filesystem is not the one prepared for this recovery");
         }
-        swap(Path::new(DEVICE_MOUNT), &mut journal, transition.rollback)
+        if journal.activation.is_some() && transition.rollback {
+            update_origin(&journal, true)?;
+        }
+        swap(Path::new(DEVICE_MOUNT), &mut journal, transition.rollback)?;
+        if let Some(activation) = &journal.activation {
+            crate::extroot::update_boot_marker(
+                Path::new(DEVICE_MOUNT),
+                &activation.original_extroot_uuid,
+                transition.rollback,
+            )?;
+            sync_filesystem(Path::new(DEVICE_MOUNT))?;
+        }
+        if journal.activation.is_some() && !transition.rollback {
+            update_origin(&journal, false)?;
+        }
+        Ok(())
     })();
     // SAFETY: sync takes no arguments, and target remains a valid C string.
     unsafe {
@@ -1139,6 +1311,7 @@ mod tests {
             nonce: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".into(),
             phase: "prepared".into(),
             original_lan: "192.168.1.1".into(),
+            activation: None,
             overlay: Overlay {
                 device: "/dev/loop0".into(),
                 identity: "7:0".into(),
@@ -1335,6 +1508,64 @@ mod tests {
         let inode = fs::metadata(overlay.join("upper")).unwrap().ino();
         swap(overlay, &mut journal, true).unwrap();
         assert_eq!(fs::metadata(overlay.join("upper")).unwrap().ino(), inode);
+    }
+
+    #[test]
+    fn extroot_activation_and_rollback_restore_the_original_fstab_and_state() {
+        let temporary = tempdir().unwrap();
+        let origin = temporary.path().join("origin");
+        let external = temporary.path().join("external");
+        mkdir(&external, 0o755).unwrap();
+        let base = trees(&external);
+        mkdir(&origin.join("upper/etc/config"), 0o755).unwrap();
+        let state_path = origin
+            .join("upper/etc/overlay-restore/jobs")
+            .join(ID)
+            .join("state.json");
+        save_json(
+            &state_path,
+            &json!({"id": ID, "status": "awaiting_clean_boot"}),
+        )
+        .unwrap();
+        let original_fstab = "config mount 'data'\n option target '/mnt/data'\n";
+        let mut journal = journal();
+        journal.activation = Some(Activation {
+            origin: journal.overlay.clone(),
+            uuid: "abcd-1234".into(),
+            original_fstab: original_fstab.into(),
+            original_extroot_uuid: None,
+        });
+        // The old external tree has no record of this new restore task.
+        fs::remove_file(
+            external
+                .join("upper/etc/overlay-restore/jobs")
+                .join(ID)
+                .join("state.json"),
+        )
+        .unwrap();
+        swap(&external, &mut journal, false).unwrap();
+        update_origin_files(&origin, &journal, false).unwrap();
+        assert!(
+            fs::read_to_string(origin.join("upper/etc/config/fstab"))
+                .unwrap()
+                .contains("uuid 'abcd-1234'")
+        );
+        update_origin_files(&origin, &journal, true).unwrap();
+        assert_eq!(
+            fs::read_to_string(origin.join("upper/etc/config/fstab")).unwrap(),
+            original_fstab
+        );
+        let state: Value = read_json(&state_path).unwrap();
+        assert_eq!(state["status"], "rolled_back");
+        swap(&external, &mut journal, true).unwrap();
+        assert_eq!(
+            fs::read(base.join("alternate-upper/root/restored")).unwrap(),
+            b"restored"
+        );
+        assert_eq!(
+            fs::read(external.join("upper/root/old-program")).unwrap(),
+            b"old"
+        );
     }
 
     #[test]

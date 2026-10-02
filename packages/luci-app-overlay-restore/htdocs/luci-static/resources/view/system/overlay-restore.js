@@ -9,6 +9,7 @@
 'require fs';
 
 const callList = rpc.declare({ object: 'overlay-restore', method: 'list', expect: { '': {} } });
+const callDevices = rpc.declare({ object: 'overlay-restore', method: 'devices', expect: { '': {} } });
 const callPrepare = rpc.declare({ object: 'overlay-restore', method: 'prepare', params: [ 'path' ], expect: { '': {} } });
 const callStatus = rpc.declare({ object: 'overlay-restore', method: 'status', params: [ 'id' ], expect: { '': {} } });
 const callApply = rpc.declare({ object: 'overlay-restore', method: 'apply', params: [ 'id', 'confirmation' ], expect: { '': {} } });
@@ -220,7 +221,8 @@ return view.extend({
     refreshRevision: 0,
     cleaning: false,
     load: function() {
-        return Promise.all([ uci.load('overlay_restore'), callList().then(checked) ]);
+        return Promise.all([ uci.load('overlay_restore'), callList().then(checked),
+            callDevices().then(checked).catch(function(error) { return { devices: [], error: error.message }; }) ]);
     },
 
     saveSettings: function() {
@@ -257,6 +259,8 @@ return view.extend({
                 '当前内核、包管理状态、软件源、公钥和恢复工具会保留。'),
             settings.clean_overlay ? E('p', { 'class': 'alert-message warning' },
                 '将重建 ' + settings.overlay_target.device + '（' + settings.overlay_target.filesystem + '）上用于系统的 overlay，并停止服务、自动重启。旧 overlay 会保留以便回退；该分区上的其他目录会保留。') : '',
+            settings.extroot_uuid ? E('p', { 'class': 'alert-message warning' },
+                '将按 UUID ' + settings.extroot_uuid + ' 重新启用此分区为 extroot。当前系统保留，回退时恢复当前系统及原挂载配置。') : '',
             settings.restore_credentials ? E('p', { 'class': 'alert-message warning' }, '备份中的账号及 SSH 凭据会恢复，重连后可能需要使用备份中的密码登录。') : '',
             task.plan.lan_ip ? E('p', '备份中的 LAN 地址：' + task.plan.lan_ip) : '',
             E('p', settings.reboot ? '配置迁移完成后会自动重启。' : '配置迁移完成后需要手动重启。'),
@@ -347,7 +351,8 @@ return view.extend({
             body.push(E('p', '备份 SHA256：' + plan.sha256));
             body.push(E('p', '将迁移 ' + plan.file_count + ' 个文件，已写入 ' + task.completed_count + ' 个。'));
             body.push(E('p', '自用软件源：' + plan.myfeed_repo));
-            body.push(E('p', settings.keep_current_extroot ? '保留当前系统的 extroot 挂载配置。' : '使用备份中的完整 fstab。'));
+            body.push(E('p', settings.extroot_uuid ? '将重新启用 ' + settings.overlay_target.device + ' 为 extroot，UUID：' + settings.extroot_uuid :
+                settings.keep_current_extroot ? '保留当前系统的 extroot 挂载配置。' : '使用备份中的完整 fstab。'));
             body.push(E('details', { 'data-section': 'files' }, [
                 E('summary', '待恢复文件（最多显示 200 项）'),
                 E('pre', { 'style': 'max-height:260px;overflow:auto' }, plan.files.map(function(file) { return file.path; }).join('\n'))
@@ -497,8 +502,8 @@ return view.extend({
         section.tab('services', '服务修复');
         section.tab('limits', '备份限制');
         [
-            [ 'clean_overlay', '恢复前重建干净 overlay', '勾选：自动准备当前固件的干净环境，停止服务后切换并重启恢复。支持当前挂载的内部或外部 ext4 / f2fs overlay；旧环境保留供回退，其他磁盘目录保留。需要保持「保留当前 extroot」和「自动重启」开启，并能访问软件源。默认关闭。' ],
-            [ 'keep_current_extroot', '保留当前 extroot', '勾选（默认）：保留当前用于系统的 extroot 挂载，恢复备份中的其他挂载项。不勾选：使用备份中的完整挂载配置。' ],
+            [ 'clean_overlay', '恢复前重建干净 overlay', '勾选：自动准备当前固件的干净环境，停止服务后切换并重启恢复。可使用当前 overlay，也可选择升级后需要重新启用的外部分区。旧环境保留供回退，其他磁盘目录保留。需要保持「保留当前 extroot」和「自动重启」开启，并能访问软件源。默认关闭。' ],
+            [ 'keep_current_extroot', '保留当前 extroot', '勾选（默认）：保留当前用于系统的 extroot 挂载，恢复备份中的其他挂载项。不勾选：使用备份中的完整挂载配置。重建干净 overlay 时必须开启，挂载目标以「恢复目标 overlay」的选择为准。' ],
             [ 'keep_network', '保留当前网络、防火墙和 DHCP 配置', '勾选：保留当前三项配置。不勾选（默认）：恢复备份中的对应配置，LAN 地址可能改变。Wi-Fi、SmartDNS 和 Nikki 配置不受此选项保护。' ],
             [ 'restore_credentials', '恢复备份中的账号及 SSH 凭据', '勾选（默认）：恢复备份中的账号、密码和 SSH 凭据，重连时可能需要使用备份密码。不勾选：保留当前登录凭据。' ],
             [ 'reboot', '迁移完成后自动重启', '勾选（默认）：配置迁移后自动重启，再安装软件并修复服务。不勾选：等待手动重启后继续。' ]
@@ -506,6 +511,23 @@ return view.extend({
             const option = section.taboption('general', form.Flag, item[0], item[1], item[2]);
             option.rmempty = false;
         });
+        const target = section.taboption('general', form.ListValue, 'overlay_device', '恢复目标 overlay',
+            '选择当前 overlay，或需要重新启用为 extroot 的 ext4 / f2fs 分区。执行时会临时挂载未挂载分区，重建系统 upper/work，并按 UUID 启用 extroot；不格式化分区，其他目录保留。插入磁盘后刷新页面可重新读取分区。');
+        target.depends('clean_overlay', '1');
+        target.rmempty = false;
+        target.value('', data[2].current ? '当前 overlay（' + data[2].current.device + '）' : '当前 overlay');
+        const selectedDevice = uci.get('overlay_restore', 'main', 'overlay_device');
+        if (selectedDevice && data[2].current && selectedDevice == data[2].current.device)
+            target.value(selectedDevice, '当前 extroot（' + selectedDevice + '）');
+        (data[2].devices || []).forEach(function(device) {
+            target.value(device.device, device.device + ' · ' + device.filesystem +
+                (device.label ? ' · ' + device.label : '') + ' · UUID ' + device.uuid +
+                (device.mountpoint ? ' · ' + device.mountpoint : ' · 未挂载'));
+        });
+        if (selectedDevice && !target.keylist.includes(selectedDevice))
+            target.value(selectedDevice, selectedDevice + ' · 当前不可用，请重新选择');
+        if (data[2].error)
+            target.description += ' 分区读取失败：' + data[2].error;
         [ [ 'install_packages', '从当前源安装' ], [ 'myfeed_packages', '从 myfeed 安装' ], [ 'optional_packages', '从 myfeed 尝试安装' ],
           [ 'remove_packages', '移除预装 LuCI 软件包' ] ].forEach(function(item) {
             section.taboption('packages', form.DynamicList, item[0], item[1]);

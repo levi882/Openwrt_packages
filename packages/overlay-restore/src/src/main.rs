@@ -6,7 +6,7 @@ use std::path::Path;
 
 fn help() {
     println!(
-        "overlay-restore {}\nInspect and migrate OpenWrt backup configuration\n\nCommands:\n  inspect BACKUP\n  apply TASK_ID --confirm TASK_ID [--no-reboot]\n  status TASK_ID\n  retry TASK_ID\n  list\n  usage\n  cleanup\n  remove TASK_ID --confirm TASK_ID\n  rollback TASK_ID --confirm TASK_ID\n  discard-overlay TASK_ID --confirm TASK_ID\n  worker [--once]\n  rpc METHOD\n  --version",
+        "overlay-restore {}\nInspect and migrate OpenWrt backup configuration\n\nCommands:\n  inspect BACKUP\n  apply TASK_ID --confirm TASK_ID [--no-reboot]\n  status TASK_ID\n  retry TASK_ID\n  list\n  devices\n  usage\n  cleanup\n  remove TASK_ID --confirm TASK_ID\n  rollback TASK_ID --confirm TASK_ID\n  discard-overlay TASK_ID --confirm TASK_ID\n  worker [--once]\n  rpc METHOD\n  --version",
         env!("CARGO_PKG_VERSION")
     );
 }
@@ -86,6 +86,7 @@ fn main_inner() -> Result<i32> {
             state
         }
         "list" if arguments.len() == 1 => rpc::list(&jobs)?,
+        "devices" if arguments.len() == 1 => overlay_restore::extroot::devices(&jobs)?,
         "usage" if arguments.len() == 1 => jobs.usage()?,
         "cleanup" if arguments.len() == 1 => jobs.cleanup()?,
         "remove" if arguments.len() == 4 && arguments[2] == "--confirm" => {

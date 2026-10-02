@@ -15,7 +15,7 @@ define Package/overlay-restore
   SECTION:=utils
   CATEGORY:=Utilities
   TITLE:=Validated configuration migration from OpenWrt overlay backups
-  DEPENDS:=@x86_64 +apk-mbedtls +uci +uclient-fetch +libustream-mbedtls +ca-bundle
+  DEPENDS:=@x86_64 +apk-mbedtls +uci +uclient-fetch +libustream-mbedtls +ca-bundle +block-mount
 endef
 
 define Package/overlay-restore/description

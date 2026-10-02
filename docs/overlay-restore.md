@@ -137,16 +137,20 @@ myfeed 在执行期间临时加 `@myfeed` 标签。原软件源内容、原有 w
 ## 恢复前重建干净 overlay
 
 此选项默认关闭。开启后，软件替代手动清理当前 overlay、重新挂载并运行恢复脚本的步骤，
-使用当前固件的基础系统和 APK 数据库重新建立环境。支持已经挂载为 `/overlay` 的
-内部或外部 ext4/f2fs overlay，根文件系统须采用 squashfs + OverlayFS 的标准 upper/work 布局。
-未挂载的外部分区、平铺 ext4 根文件系统和自定义布局不自动处理。
+使用当前固件的基础系统和 APK 数据库重新建立环境。支持当前内部或外部 ext4/f2fs overlay，
+也支持升级后尚未启用 extroot 的外部 ext4/f2fs 分区。当前根文件系统须采用
+squashfs + OverlayFS 的标准 upper/work 布局；平铺 ext4 根文件系统和自定义布局不自动处理。
 
 使用时保持「保留当前 extroot」和「迁移完成后自动重启」开启，选择备份并重新检查计划。
+在「恢复目标 overlay」中选择当前 overlay，或按设备名、文件系统、标签和 UUID 选择外部分区。
+分区可以尚未挂载，也可以仅挂载为数据目录。分区列表不包含当前系统、ROM 和启动分区。
+启用新 extroot 时，确认页面显示目标设备和 UUID，软件自动按 UUID 更新挂载配置；
+无需手动格式化、重新挂载或运行脚本。
 仅保存设置或检查备份不会清理系统；确认「执行恢复」后按以下流程执行：
 
-1. 在当前 overlay 的独立暂存目录准备新 upper/work，保留当前网络、登录入口和 extroot 挂载配置作为基础。
+1. 在选定文件系统的独立暂存目录准备新 upper/work；尚未挂载的外部分区临时挂载，原系统继续运行。
 2. 从当前固件的 APK 数据库及软件源安装恢复工具和所需 DNS/代理程序，再按计划写入备份配置及自定义文件。
-3. 通过 procd 停止服务、进入 RAM、卸载当前 overlay，再交换新旧 upper/work 并重启。此过程不刷写固件、不格式化磁盘。
+3. 通过 procd 停止服务、进入 RAM、卸载当前 overlay，再交换新旧 upper/work；需要时启用选定分区为 extroot，然后重启。此过程不刷写固件、不格式化磁盘。
 4. 新环境启动后继续安装计划中的软件、移除指定 LuCI 软件并修复服务；页面重新连接后可查看结果和日志。
 
 软件源不可访问、磁盘空间不足或布局不支持时，准备阶段失败并保留当前环境。
@@ -154,6 +158,8 @@ myfeed 在执行期间临时加 `@myfeed` 标签。原软件源内容、原有 w
 保留目录位于 `/overlay/.overlay-restore-clean/TASK_ID/`，同一时间只保留一组切换环境。
 完成后可选择「回退到清理前环境」并重启，或验证完成后确认「删除暂存 overlay」释放空间。
 回退后，恢复出的环境仍保留在暂存目录；删除暂存目录会永久删除其中的文件。
+新启用外部分区的任务回退到原系统，并恢复原 fstab 和外部分区旧环境；
+升级遗留的 extroot UUID 标记会备份并在切换时更新，回退时恢复。
 若此后升级了固件，自动回退会停用，仍可在设备布局匹配时删除暂存环境。
 
 命令行对应入口：
@@ -162,6 +168,11 @@ myfeed 在执行期间临时加 `@myfeed` 标签。原软件源内容、原有 w
 uci set overlay_restore.main.clean_overlay=1
 uci set overlay_restore.main.keep_current_extroot=1
 uci set overlay_restore.main.reboot=1
+# 默认使用当前 overlay。
+uci set overlay_restore.main.overlay_device=''
+# 升级后需要重新启用外部分区时，先列出分区，再将上一行改为所选设备。
+overlay-restore devices
+# 例如：uci set overlay_restore.main.overlay_device='/dev/sda1'
 uci commit overlay_restore
 overlay-restore inspect /mnt/backup/overlay_backup.tar.gz
 overlay-restore apply TASK_ID --confirm TASK_ID
@@ -192,7 +203,7 @@ IPTV Refresh 安装成功且当前数据目录存在时，才会配置并启用�
 不会自动创建缺失的外接磁盘根目录。Home Assistant 目录缺失时不写入它。
 令牌留空时生成随机令牌并存入任务私有选项及 `/etc/iptv-refresh/token`。
 
-RPC 暴露 `prepare/list/status/apply/retry/usage/cleanup/remove/rollback/discard_overlay`；`prepare` 可接收备份绝对路径，
+RPC 暴露 `prepare/list/status/apply/retry/devices/usage/cleanup/remove/rollback/discard_overlay`；`prepare` 可接收备份绝对路径，
 省略路径时仍使用固定上传临时文件名。直接选择的备份不会被删除，文件符号链接及特殊文件会被拒绝。
 ACL 的只读部分允许读取任务与配置、查询所选路径的文件属性。
 写入部分允许恢复和修改本应用配置，上传只允许固定临时文件名；

@@ -547,10 +547,15 @@ impl Jobs {
                 public.insert(key.to_owned(), settings[key].clone());
             }
             if options.clean_overlay {
-                public.insert(
-                    "overlay_target".into(),
-                    serde_json::to_value(crate::clean::discover(&self.root)?)?,
-                );
+                let (target, activation) = crate::extroot::select(self, &options.overlay_device)?;
+                public.insert("overlay_target".into(), serde_json::to_value(target)?);
+                if let Some(activation) = activation {
+                    public.insert(
+                        "overlay_origin".into(),
+                        serde_json::to_value(activation.origin)?,
+                    );
+                    public.insert("extroot_uuid".into(), json!(activation.uuid));
+                }
             }
             plan.settings = Value::Object(public);
             plan.myfeed_repo = self.feed_url(&options)?;

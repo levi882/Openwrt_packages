@@ -1,6 +1,7 @@
 pub mod archive;
 pub mod clean;
 pub mod engine;
+pub mod extroot;
 pub mod packages;
 pub mod rpc;
 pub mod services;
