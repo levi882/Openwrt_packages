@@ -195,6 +195,9 @@ const DirectoryPath = form.Value.extend({
 
 return view.extend({
     taskId: null,
+    taskSnapshot: null,
+    historySnapshot: null,
+    refreshRevision: 0,
     load: function() {
         return Promise.all([ uci.load('overlay_restore'), callList().then(checked) ]);
     },
@@ -259,16 +262,16 @@ return view.extend({
             body.push(E('p', '将迁移 ' + plan.file_count + ' 个文件，已写入 ' + task.completed_count + ' 个。'));
             body.push(E('p', '自用软件源：' + plan.myfeed_repo));
             body.push(E('p', settings.keep_current_extroot ? '保留当前系统的 extroot 挂载配置。' : '使用备份中的完整 fstab。'));
-            body.push(E('details', {}, [
+            body.push(E('details', { 'data-section': 'files' }, [
                 E('summary', '待恢复文件（最多显示 200 项）'),
                 E('pre', { 'style': 'max-height:260px;overflow:auto' }, plan.files.map(function(file) { return file.path; }).join('\n'))
             ]));
-            body.push(E('details', {}, [
+            body.push(E('details', { 'data-section': 'packages' }, [
                 E('summary', '软件安装及移除计划'),
                 E('pre', '当前源安装：\n' + settings.install_packages.join(' ') + '\n\nmyfeed 安装：\n' + settings.myfeed_packages.join(' ') +
                     '\n\n可选安装：\n' + settings.optional_packages.join(' ') + '\n\n移除：\n' + settings.remove_packages.join(' '))
             ]));
-            body.push(E('details', {}, [ E('summary', '跳过的备份内容'), E('pre', JSON.stringify(plan.skipped, null, 2)) ]));
+            body.push(E('details', { 'data-section': 'skipped' }, [ E('summary', '跳过的备份内容'), E('pre', JSON.stringify(plan.skipped, null, 2)) ]));
         }
         if (task.status == 'ready' && L.hasViewPermission())
             body.push(E('button', { 'class': 'btn cbi-button-action', 'click': L.bind(this.confirm, this, task) }, '确认恢复计划'));
@@ -286,30 +289,77 @@ return view.extend({
         if (rows.length)
             body.push(E('table', { 'class': 'table' }, [ E('tr', { 'class': 'tr table-titles' },
                 [ '软件包', '操作', '结果', '说明' ].map(function(title) { return E('th', { 'class': 'th' }, title); })) ].concat(rows)));
-        body.push(E('details', { 'open': '' }, [ E('summary', '执行日志'),
+        body.push(E('details', { 'data-section': 'log', 'open': '' }, [ E('summary', '执行日志'),
             E('pre', { 'style': 'max-height:320px;overflow:auto;white-space:pre-wrap' }, task.log || '等待执行…') ]));
-        return E('div', { 'class': 'cbi-section' }, body);
+        return E('div', { 'class': 'cbi-section', 'data-task-id': task.id }, body);
+    },
+
+    updateTask: function(task) {
+        const snapshot = JSON.stringify(task);
+        if (snapshot == this.taskSnapshot)
+            return;
+        const previous = this.status.firstElementChild;
+        const sameTask = previous && previous.getAttribute('data-task-id') == task.id;
+        const sections = {};
+        let focusedSection = null;
+        if (sameTask) {
+            previous.querySelectorAll('details[data-section]').forEach(function(section) {
+                const key = section.getAttribute('data-section'), pre = section.querySelector('pre');
+                sections[key] = { open: section.open, top: pre ? pre.scrollTop : 0, left: pre ? pre.scrollLeft : 0 };
+                if (section.querySelector('summary') == document.activeElement)
+                    focusedSection = key;
+            });
+        }
+        const panel = this.renderTask(task), scrollX = window.scrollX, scrollY = window.scrollY;
+        panel.querySelectorAll('details[data-section]').forEach(function(section) {
+            const state = sections[section.getAttribute('data-section')];
+            if (state)
+                section.open = state.open;
+        });
+        dom.content(this.status, panel);
+        panel.querySelectorAll('details[data-section]').forEach(function(section) {
+            const key = section.getAttribute('data-section'), state = sections[key], pre = section.querySelector('pre');
+            if (state && pre) {
+                pre.scrollTop = state.top;
+                pre.scrollLeft = state.left;
+            }
+            if (key == focusedSection)
+                section.querySelector('summary').focus({ preventScroll: true });
+        });
+        if (sameTask)
+            window.scrollTo(scrollX, scrollY);
+        this.taskSnapshot = snapshot;
     },
 
     refresh: function() {
+        const revision = ++this.refreshRevision;
         return callList().then(checked).then(L.bind(function(result) {
-            dom.content(this.history, [ E('h3', '最近的恢复任务') ].concat((result.tasks || []).map(L.bind(function(task) {
-                return E('button', { 'class': 'btn', 'style': 'margin:4px', 'click': L.bind(function() {
-                    this.taskId = task.id;
-                    return this.refresh();
-                }, this) }, labels[task.status] + ' · ' + task.id.slice(0, 8));
-            }, this))));
+            if (revision != this.refreshRevision)
+                return null;
+            const tasks = result.tasks || [];
+            const snapshot = JSON.stringify(tasks.map(function(task) { return [ task.id, task.status ]; }));
+            if (snapshot != this.historySnapshot) {
+                dom.content(this.history, [ E('h3', '最近的恢复任务') ].concat(tasks.map(L.bind(function(task) {
+                    return E('button', { 'class': 'btn', 'style': 'margin:4px', 'click': L.bind(function() {
+                        this.taskId = task.id;
+                        return this.refresh();
+                    }, this) }, labels[task.status] + ' · ' + task.id.slice(0, 8));
+                }, this))));
+                this.historySnapshot = snapshot;
+            }
             if (!this.taskId && result.tasks && result.tasks.length)
                 this.taskId = result.tasks[0].id;
             return this.taskId ? callStatus(this.taskId).then(checked) : null;
         }, this)).then(L.bind(function(task) {
+            if (revision != this.refreshRevision)
+                return;
             this.upload.disabled = uploadDisabled(task);
             this.inspectLocal.disabled = this.upload.disabled;
             this.backupPath.disabled = this.upload.disabled;
             this.quickfile.disabled = this.upload.disabled;
             if (!task)
                 return;
-            dom.content(this.status, this.renderTask(task));
+            this.updateTask(task);
             if (task.status == 'awaiting_reboot' && task.plan.settings.reboot && !task.reboot_failed && !this.reconnecting) {
                 this.reconnecting = true;
                 ui.showModal('正在等待重启', [ E('p', { 'class': 'spinning' }, '重启后重新登录此页面，可查看软件包恢复结果。') ]);
