@@ -23,7 +23,9 @@ const labels = {
 };
 
 function checked(result) {
-    if (result.error)
+    // A failed task carries its error alongside id/status for display.
+    // RPC failures only carry an error and must reject the call.
+    if (result.error && !(typeof result.id == 'string' && typeof result.status == 'string'))
         throw new Error(result.error);
     return result;
 }
