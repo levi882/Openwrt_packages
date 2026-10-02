@@ -1,0 +1,28 @@
+#!/bin/sh
+set -e
+
+id="$1"
+case "$id" in ''|*[!0-9a-f]*) exit 1 ;; esac
+[ "${#id}" = 32 ] || exit 1
+[ -f /tmp/overlay-restore-stage.json ] || exit 1
+
+. /lib/functions.sh
+. /lib/functions/system.sh
+. /lib/upgrade/common.sh
+RAM_ROOT="/tmp/overlay-restore-ramfs-$id"
+umask 077
+mkdir -p "$RAM_ROOT"
+# install_file returns false for files already copied (the musl loader and
+# libc may resolve to the same file). Verify every required file explicitly.
+install_bin /sbin/upgraded || true
+[ -x "$RAM_ROOT/sbin/upgraded" ] || exit 1
+[ ! -L /lib64 ] || ln -sf /lib "$RAM_ROOT/lib64"
+for library in $(libs /sbin/upgraded); do
+    [ -f "$RAM_ROOT$library" ] || {
+        echo "Missing RAM library: $library" >&2
+        exit 1
+    }
+done
+# procd stops services and its existing stage2 pivots to RAM. The command only
+# exchanges overlay directories; neither it nor clean-stage flashes firmware.
+ubus call system sysupgrade "$2"

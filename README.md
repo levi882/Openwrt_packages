@@ -82,8 +82,10 @@ The same backend is available from the router CLI:
 
 The helper now requires the installed `overlay-restore` package. It migrates
 configuration and custom regular files through the mounted root filesystem;
-it does not clear or replace the entire overlay. Files absent from the backup
-remain on the current system. Current kernel files, package database, feeds,
+by default, files absent from the backup remain on the current system.
+Optional clean recovery prepares a fresh internal or external ext4/f2fs overlay,
+switches from RAM, and retains the old environment for rollback. Other disk
+directories are kept. In the default mode, current kernel files, package database, feeds,
 keys, LuCI runtime, and recovery tools are preserved. Selected packages are
 installed after reboot by a persistent `procd` worker, with a retry action for
 failed package/service work.

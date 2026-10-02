@@ -27,4 +27,5 @@ jobs:
         run: |
           bash -n scripts/build-local-apks.sh scripts/setup-restore-rust.sh scripts/test-restore-rust.sh
           sh -n router/restore_overlay.sh packages/overlay-restore/files/etc/init.d/overlay-restore
+          sh -n packages/overlay-restore/files/usr/libexec/overlay-restore-switch packages/overlay-restore/files/lib/upgrade/zz-overlay-restore.sh
           sh -n packages/luci-app-overlay-restore/root/usr/libexec/rpcd/overlay-restore

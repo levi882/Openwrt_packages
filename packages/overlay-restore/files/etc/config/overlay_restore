@@ -1,4 +1,5 @@
 config restore 'main'
+	option clean_overlay '0'
 	option keep_current_extroot '1'
 	option keep_network '0'
 	option restore_credentials '1'

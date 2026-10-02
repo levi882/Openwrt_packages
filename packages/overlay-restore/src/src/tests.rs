@@ -985,6 +985,44 @@ fn symlink_parent_destination_is_rejected() {
 }
 
 #[test]
+fn clean_apply_rejects_no_reboot_without_mutating_the_inspected_task() {
+    let fixture = Fixture::new();
+    let id = fixture.ready();
+    let task = fixture.jobs.path(&id).unwrap();
+    let mut options = fixture.options.clone();
+    options.clean_overlay = true;
+    options.keep_current_extroot = true;
+    options.reboot = true;
+    save_json(&task.join("options.json"), &options).unwrap();
+    assert!(fixture.jobs.apply(&id, &id, Some(false)).is_err());
+    let unchanged: Options = read_json(&task.join("options.json")).unwrap();
+    assert!(unchanged.reboot);
+    assert_eq!(fixture.jobs.load(&id).unwrap()["status"], "ready");
+    assert!(!task.join("payload").exists());
+    assert!(fixture.jobs.temporary.join(&id).join("payload").is_dir());
+}
+
+#[test]
+fn reconnect_addresses_support_uci_ipaddr_lists_and_reject_hostnames() {
+    for setting in [
+        "option ipaddr '192.168.1.1'",
+        "option ipaddr '192.168.1.1/24'",
+        "list ipaddr '192.168.1.1/24'\nlist ipaddr '192.168.2.1/24'",
+    ] {
+        let network = format!("config interface 'lan'\n{setting}\n");
+        assert_eq!(
+            crate::archive::lan_address(&network).unwrap(),
+            "192.168.1.1"
+        );
+    }
+    assert_eq!(
+        crate::archive::lan_address("config interface 'lan'\noption ipaddr 'example.com'\n")
+            .unwrap(),
+        ""
+    );
+}
+
+#[test]
 fn tampered_staging_and_persistent_payloads_are_rejected() {
     let fixture = Fixture::new();
     let id = fixture.ready();

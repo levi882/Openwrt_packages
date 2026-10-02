@@ -6,7 +6,7 @@ use std::path::Path;
 
 fn help() {
     println!(
-        "overlay-restore {}\nInspect and migrate OpenWrt backup configuration\n\nCommands:\n  inspect BACKUP\n  apply TASK_ID --confirm TASK_ID [--no-reboot]\n  status TASK_ID\n  retry TASK_ID\n  list\n  usage\n  cleanup\n  remove TASK_ID --confirm TASK_ID\n  worker [--once]\n  rpc METHOD\n  --version",
+        "overlay-restore {}\nInspect and migrate OpenWrt backup configuration\n\nCommands:\n  inspect BACKUP\n  apply TASK_ID --confirm TASK_ID [--no-reboot]\n  status TASK_ID\n  retry TASK_ID\n  list\n  usage\n  cleanup\n  remove TASK_ID --confirm TASK_ID\n  rollback TASK_ID --confirm TASK_ID\n  discard-overlay TASK_ID --confirm TASK_ID\n  worker [--once]\n  rpc METHOD\n  --version",
         env!("CARGO_PKG_VERSION")
     );
 }
@@ -28,6 +28,10 @@ fn main_inner() -> Result<i32> {
     // SAFETY: geteuid has no arguments or memory preconditions.
     if unsafe { libc::geteuid() } != 0 {
         bail!("Run the recovery tool as root");
+    }
+    if command == "clean-stage" && arguments.len() == 2 {
+        overlay_restore::clean::run_stage(Path::new(&arguments[1]))?;
+        return Ok(0);
     }
     if !Path::new("/etc/openwrt_release").is_file() || !Path::new("/usr/bin/apk").is_file() {
         bail!("This command requires OpenWrt with APK; use cargo test on development hosts");
@@ -86,6 +90,14 @@ fn main_inner() -> Result<i32> {
         "cleanup" if arguments.len() == 1 => jobs.cleanup()?,
         "remove" if arguments.len() == 4 && arguments[2] == "--confirm" => {
             jobs.remove(&arguments[1], &arguments[3])?
+        }
+        "rollback" if arguments.len() == 4 && arguments[2] == "--confirm" => {
+            let state = overlay_restore::clean::rollback(&jobs, &arguments[1], &arguments[3])?;
+            jobs.start_worker()?;
+            state
+        }
+        "discard-overlay" if arguments.len() == 4 && arguments[2] == "--confirm" => {
+            overlay_restore::clean::discard(&jobs, &arguments[1], &arguments[3])?
         }
         "worker" if arguments.len() == 1 || arguments.len() == 2 && arguments[1] == "--once" => {
             jobs.worker(arguments.len() == 2)?;

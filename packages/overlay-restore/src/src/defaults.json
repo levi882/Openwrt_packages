@@ -1,4 +1,5 @@
 {
+    "clean_overlay": false,
     "keep_current_extroot":  true,
     "keep_network":  false,
     "restore_credentials":  true,

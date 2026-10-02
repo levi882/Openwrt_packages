@@ -9,7 +9,7 @@
     "write": {
       "cgi-io": ["upload"],
       "file": { "/tmp/overlay-restore-upload.tar.gz": ["write"] },
-      "ubus": { "overlay-restore": ["prepare", "apply", "retry", "cleanup", "remove"], "uci": ["set", "delete", "commit", "revert"] },
+      "ubus": { "overlay-restore": ["prepare", "apply", "retry", "cleanup", "remove", "rollback", "discard_overlay"], "uci": ["set", "delete", "commit", "revert"] },
       "uci": ["overlay_restore"]
     }
   }
