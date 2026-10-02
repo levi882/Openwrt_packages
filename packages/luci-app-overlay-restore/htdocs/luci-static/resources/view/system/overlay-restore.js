@@ -438,11 +438,14 @@ return view.extend({
         }, this));
     },
 
-    handleSaveApply: null,
+    handleSaveApply: function() {
+        return this.saveSettings()
+            .then(function() { ui.addNotification(null, E('p', '恢复设置已保存并应用，后续检查将使用这些设置。'), 'info'); })
+            .catch(function(error) { ui.addNotification(null, E('p', error.message)); });
+    },
     handleSave: function() {
         return this.saveSettings()
             .then(function() { ui.addNotification(null, E('p', '恢复设置已保存，后续检查将使用这些设置。'), 'info'); })
             .catch(function(error) { ui.addNotification(null, E('p', error.message)); });
-    },
-    handleReset: null
+    }
 });
