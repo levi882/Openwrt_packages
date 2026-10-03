@@ -1395,6 +1395,83 @@ fn repository_journal_restores_original_content_and_existing_world_tags() {
 }
 
 #[test]
+fn clean_recovery_repairs_missing_feed_tags_without_changing_world_constraints() {
+    let fixture = Fixture::new();
+    let id = fixture.ready();
+    let mut task = fixture.jobs.load(&id).unwrap();
+    task["clean_overlay"] = json!({"phase": "switched"});
+    fixture.jobs.save(&mut task).unwrap();
+    write(&fixture.root.join("etc/overlay-restore/clean-id"), &id);
+    let repo = fixture.root.join("etc/apk/repositories.d/00-myfeed.list");
+    let world = fixture.root.join("etc/apk/world");
+    let original = "# keep comment\nhttps://example.org/packages.adb\n";
+    let constraints = "overlay-restore@myfeed>=0.2.0-r8\nnikki@myfeed\ncurl\n";
+    write(&repo, original);
+    write(&world, constraints);
+    let plan: crate::archive::Plan =
+        read_json(&fixture.jobs.path(&id).unwrap().join("plan.json")).unwrap();
+    packages::restore_repository(&fixture.jobs, &id).unwrap();
+    let repaired = fs::read_to_string(&repo).unwrap();
+    assert_eq!(
+        repaired,
+        format!("{original}@myfeed {}\n", plan.myfeed_repo)
+    );
+    assert_eq!(fs::read_to_string(&world).unwrap(), constraints);
+    packages::restore_repository(&fixture.jobs, &id).unwrap();
+    assert_eq!(fs::read_to_string(repo).unwrap(), repaired);
+}
+
+#[test]
+fn clean_transaction_keeps_the_tag_definition_for_preexisting_bootstrap_pins() {
+    let fixture = Fixture::new();
+    let id = fixture.ready();
+    let mut task = fixture.jobs.load(&id).unwrap();
+    task["clean_overlay"] = json!({"phase": "switched"});
+    fixture.jobs.save(&mut task).unwrap();
+    write(&fixture.root.join("etc/overlay-restore/clean-id"), &id);
+    let repo = fixture.root.join("etc/apk/repositories.d/00-myfeed.list");
+    let world = fixture.root.join("etc/apk/world");
+    write(&repo, "@myfeed https://example.org/packages.adb\n");
+    write(&world, "overlay-restore@myfeed>=0.2.0-r8\ncurl@myfeed\n");
+    save_json(&fixture.jobs.path(&id).unwrap().join("repository.json"), &json!({"existed": true, "original": "https://example.org/packages.adb\n", "url": "https://example.org/packages.adb", "packages": ["curl"], "tagged_before": ["overlay-restore"]})).unwrap();
+    packages::restore_repository(&fixture.jobs, &id).unwrap();
+    let plan: crate::archive::Plan =
+        read_json(&fixture.jobs.path(&id).unwrap().join("plan.json")).unwrap();
+    assert_eq!(
+        fs::read_to_string(repo).unwrap(),
+        format!(
+            "https://example.org/packages.adb\n@myfeed {}\n",
+            plan.myfeed_repo
+        )
+    );
+    assert_eq!(
+        fs::read_to_string(world).unwrap(),
+        "overlay-restore@myfeed>=0.2.0-r8\ncurl\n"
+    );
+}
+
+#[test]
+fn ordinary_or_inactive_recovery_does_not_add_a_feed_tag() {
+    let fixture = Fixture::new();
+    let id = fixture.ready();
+    let repo = fixture.root.join("etc/apk/repositories.d/00-myfeed.list");
+    let contents = "https://example.org/packages.adb\n";
+    write(&repo, contents);
+    write(&fixture.root.join("etc/apk/world"), "existing@myfeed\n");
+    packages::restore_repository(&fixture.jobs, &id).unwrap();
+    assert_eq!(fs::read_to_string(&repo).unwrap(), contents);
+    let mut task = fixture.jobs.load(&id).unwrap();
+    task["clean_overlay"] = json!({"phase": "switched"});
+    fixture.jobs.save(&mut task).unwrap();
+    write(
+        &fixture.root.join("etc/overlay-restore/clean-id"),
+        "another-task",
+    );
+    packages::restore_repository(&fixture.jobs, &id).unwrap();
+    assert_eq!(fs::read_to_string(repo).unwrap(), contents);
+}
+
+#[test]
 fn failed_write_rolls_back_completed_files_and_removes_new_files() {
     let mut fixture = Fixture::new();
     backup(
