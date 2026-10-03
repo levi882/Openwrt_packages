@@ -1003,6 +1003,18 @@ fn clean_apply_rejects_no_reboot_without_mutating_the_inspected_task() {
 }
 
 #[test]
+fn insufficient_storage_reports_the_checked_location_and_capacity() {
+    let temporary = tempdir().unwrap();
+    crate::util::require_space(temporary.path(), 0, "recovery").unwrap();
+    let error = crate::util::require_space(temporary.path(), u64::MAX, "recovery")
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains(&temporary.path().display().to_string()));
+    assert!(error.contains("MiB available"));
+    assert!(error.contains("MiB required"));
+}
+
+#[test]
 fn reconnect_addresses_support_uci_ipaddr_lists_and_reject_hostnames() {
     for setting in [
         "option ipaddr '192.168.1.1'",

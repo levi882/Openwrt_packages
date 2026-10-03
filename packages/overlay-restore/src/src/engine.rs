@@ -2,7 +2,8 @@ use crate::archive::{Plan, inspect_backup, lan_address, merge_fstab, safe_name};
 use crate::settings::{Options, from_uci, valid_url};
 use crate::util::{
     Lock, Runner, SystemRunner, atomic_copy, atomic_write, digest_file, disk_free, mkdir, now,
-    open_regular, quote, random_hex, read_json, save_json, sync_parent, tail, timestamp,
+    open_regular, quote, random_hex, read_json, require_space, save_json, sync_parent, tail,
+    timestamp,
 };
 use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
@@ -618,26 +619,36 @@ impl Jobs {
                 bail!("Staged file changed after inspection: {}", entry.path);
             }
         }
-        if disk_free(&task)? < 2 * (plan.selected_bytes + originals_bytes) + 8 * 1024 * 1024 {
-            bail!("Insufficient persistent storage for recovery and the original files");
-        }
-        let persistent = task.join("payload");
-        if persistent.exists() {
-            fs::remove_dir_all(&persistent)?;
-        }
-        let copied = (|| -> Result<()> {
-            for entry in &plan.files {
-                atomic_copy(
-                    &persistent.join(&entry.path),
-                    &payload.join(&entry.path),
-                    entry.mode,
-                )?;
+        if options.clean_overlay {
+            // Only records stay in the running root. The durable payload and
+            // the replacement upper belong to the inspected overlay target.
+            require_space(&task, 8 * 1024 * 1024, "recovery task records")?;
+            state["clean_overlay"] =
+                crate::clean::stage_payload(self, id, &options, &plan, &payload)?;
+        } else {
+            require_space(
+                &task,
+                2 * (plan.selected_bytes + originals_bytes) + 8 * 1024 * 1024,
+                "recovery and the original files",
+            )?;
+            let persistent = task.join("payload");
+            if persistent.exists() {
+                fs::remove_dir_all(&persistent)?;
             }
-            Ok(())
-        })();
-        if let Err(error) = copied {
-            let _ = fs::remove_dir_all(persistent);
-            return Err(error);
+            let copied = (|| -> Result<()> {
+                for entry in &plan.files {
+                    atomic_copy(
+                        &persistent.join(&entry.path),
+                        &payload.join(&entry.path),
+                        entry.mode,
+                    )?;
+                }
+                Ok(())
+            })();
+            if let Err(error) = copied {
+                let _ = fs::remove_dir_all(persistent);
+                return Err(error);
+            }
         }
         save_json(&task.join("options.json"), &options)?;
         state["status"] = json!(if options.clean_overlay {

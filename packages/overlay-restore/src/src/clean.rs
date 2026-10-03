@@ -5,7 +5,7 @@ use crate::engine::Jobs;
 use crate::extroot::{Activation, Target};
 use crate::settings::Options;
 use crate::util::{
-    atomic_copy, atomic_write, digest_file, disk_free, mkdir, now, random_hex, read_json,
+    atomic_copy, atomic_write, digest_file, mkdir, now, random_hex, read_json, require_space,
     save_json, sync_parent,
 };
 use anyhow::{Context, Result, bail};
@@ -247,6 +247,8 @@ struct Journal {
     original_lan: String,
     #[serde(default)]
     activation: Option<Activation>,
+    #[serde(default)]
+    payload_on_overlay: bool,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -443,7 +445,7 @@ fn bootstrap(jobs: &Jobs, id: &str, upper: &Path, options: &Options) -> Result<(
         "--no-scripts",
         "--no-commit-hooks",
         "add",
-        "overlay-restore@myfeed>=0.2.0-r7",
+        "overlay-restore@myfeed>=0.2.0-r8",
         "luci-app-overlay-restore@myfeed>=0.2.0-r14",
     ];
     for (name, argument) in [("smartdns", "smartdns@myfeed"), ("nikki", "nikki@myfeed")] {
@@ -547,13 +549,12 @@ fn new_destination(upper: &Path, relative: &str) -> Result<PathBuf> {
     Ok(path)
 }
 
-fn prepare(jobs: &Jobs, id: &str) -> Result<Journal> {
-    let task = jobs.path(id)?;
-    let plan: Plan = read_json(&task.join("plan.json"))?;
-    let mut options: Options = read_json(&task.join("options.json"))?;
-    options.myfeed_repo = plan.myfeed_repo.clone();
-    options.validate()?;
-    let (overlay, mut activation) = crate::extroot::select(jobs, &options.overlay_device)?;
+fn inspected_target(
+    jobs: &Jobs,
+    options: &Options,
+    plan: &Plan,
+) -> Result<(Overlay, Option<Activation>)> {
+    let (overlay, activation) = crate::extroot::select(jobs, &options.overlay_device)?;
     let inspected: Overlay = serde_json::from_value(plan.settings["overlay_target"].clone())?;
     if overlay != inspected {
         bail!("Overlay or firmware changed after inspection; inspect the backup again");
@@ -564,16 +565,16 @@ fn prepare(jobs: &Jobs, id: &str) -> Result<Journal> {
             bail!("Extroot selection changed after inspection; inspect the backup again");
         }
     }
+    Ok((overlay, activation))
+}
+
+fn retained_directory(jobs: &Jobs, target: &Path, id: &str) -> Result<PathBuf> {
     for state in jobs.states()? {
         if state["id"] != id && !Jobs::can_cleanup(&state) && state["status"] != "ready" {
             bail!("Finish other recovery tasks before rebuilding overlay");
         }
     }
-    let target = Target::open(jobs, &overlay, id)?;
-    if let Some(activation) = &mut activation {
-        activation.original_extroot_uuid = crate::extroot::boot_marker(&target.path)?;
-    }
-    let base = directory(&target.path, id)?;
+    let base = directory(target, id)?;
     let store = base.parent().context("Missing clean store")?;
     if store.exists()
         && fs::read_dir(store)?.any(|entry| entry.is_ok_and(|entry| entry.path() != base))
@@ -582,7 +583,98 @@ fn prepare(jobs: &Jobs, id: &str) -> Result<Journal> {
             "An earlier overlay is still retained; roll it back or explicitly discard it before another clean recovery"
         );
     }
-    if base.join("journal.json").is_file() {
+    Ok(base)
+}
+
+pub fn stage_payload(
+    jobs: &Jobs,
+    id: &str,
+    options: &Options,
+    plan: &Plan,
+    payload: &Path,
+) -> Result<Value> {
+    let task = jobs.path(id)?;
+    let (overlay, mut activation) = inspected_target(jobs, options, plan)?;
+    let target = Target::open(jobs, &overlay, id)?;
+    let base = retained_directory(jobs, &target.path, id)?;
+    if base.exists() {
+        bail!("Discard the incomplete clean environment before inspecting the backup again");
+    }
+    require_space(
+        &target.path,
+        2 * plan.selected_bytes + 24 * 1024 * 1024,
+        &format!("staged files and a clean overlay on {}", overlay.device),
+    )?;
+    if let Some(activation) = &mut activation {
+        activation.original_extroot_uuid = crate::extroot::boot_marker(&target.path)?;
+    }
+    mkdir(&base, 0o700)?;
+    let mut journal = Journal {
+        id: id.into(),
+        nonce: random_hex(16)?,
+        overlay,
+        activation,
+        phase: "staging".into(),
+        original_lan: fs::read_to_string(jobs.root.join("etc/config/network"))
+            .ok()
+            .and_then(|text| crate::archive::lan_address(&text).ok())
+            .unwrap_or_default(),
+        payload_on_overlay: true,
+    };
+    save_json(&base.join("journal.json"), &journal)?;
+    save_json(&task.join("clean-overlay.json"), &journal)?;
+    let mut state = jobs.load(id)?;
+    state["clean_overlay"] = summary(&journal);
+    state["status"] = json!("cleaning_overlay");
+    jobs.save(&mut state)?;
+    let staged = (|| -> Result<()> {
+        mkdir(&base.join("payload"), 0o700)?;
+        for entry in &plan.files {
+            atomic_copy(
+                &new_destination(&base.join("payload"), &entry.path)?,
+                &payload.join(&entry.path),
+                entry.mode,
+            )?;
+        }
+        journal.phase = "staged".into();
+        save_json(&base.join("journal.json"), &journal)?;
+        save_json(&task.join("clean-overlay.json"), &journal)?;
+        sync_filesystem(&target.path)?;
+        jobs.log(
+            id,
+            &format!(
+                "Recovery files persisted on {}; the running overlay holds only task records.",
+                journal.overlay.device
+            ),
+        )?;
+        Ok(())
+    })();
+    if let Err(error) = staged {
+        state["status"] = json!("failed_clean");
+        state["error"] = json!(error.to_string());
+        jobs.log(
+            id,
+            &format!("Unable to persist clean recovery files; running overlay retained: {error}"),
+        )?;
+        jobs.save(&mut state)?;
+        return Err(error);
+    }
+    Ok(summary(&journal))
+}
+
+fn prepare(jobs: &Jobs, id: &str) -> Result<Journal> {
+    let task = jobs.path(id)?;
+    let plan: Plan = read_json(&task.join("plan.json"))?;
+    let mut options: Options = read_json(&task.join("options.json"))?;
+    options.myfeed_repo = plan.myfeed_repo.clone();
+    options.validate()?;
+    let (overlay, mut activation) = inspected_target(jobs, &options, &plan)?;
+    let target = Target::open(jobs, &overlay, id)?;
+    if let Some(activation) = &mut activation {
+        activation.original_extroot_uuid = crate::extroot::boot_marker(&target.path)?;
+    }
+    let base = retained_directory(jobs, &target.path, id)?;
+    let mut journal = if base.join("journal.json").is_file() {
         let journal: Journal = read_json(&base.join("journal.json"))?;
         if journal.id != id || journal.overlay != overlay {
             bail!("Clean recovery journal changed");
@@ -592,12 +684,36 @@ fn prepare(jobs: &Jobs, id: &str) -> Result<Journal> {
         {
             return Ok(journal);
         }
-        bail!("Discard the incomplete clean environment before retrying");
-    }
-    if disk_free(&target.path)? < 2 * plan.selected_bytes + 24 * 1024 * 1024 {
-        bail!("Insufficient overlay space to retain the old environment and prepare a clean one");
-    }
-    if activation.is_some() {
+        let cached: Journal = read_json(&task.join("clean-overlay.json"))?;
+        if journal.phase != "staged"
+            || !journal.payload_on_overlay
+            || !valid_id(&journal.nonce)
+            || cached.nonce != journal.nonce
+            || journal.activation != activation
+        {
+            bail!("Discard the incomplete clean environment before retrying");
+        }
+        journal
+    } else {
+        Journal {
+            id: id.into(),
+            nonce: random_hex(16)?,
+            overlay,
+            activation,
+            phase: "building".into(),
+            original_lan: fs::read_to_string(jobs.root.join("etc/config/network"))
+                .ok()
+                .and_then(|text| crate::archive::lan_address(&text).ok())
+                .unwrap_or_default(),
+            payload_on_overlay: false,
+        }
+    };
+    require_space(
+        &target.path,
+        plan.selected_bytes * if journal.payload_on_overlay { 1 } else { 2 } + 24 * 1024 * 1024,
+        &format!("a clean overlay on {}", journal.overlay.device),
+    )?;
+    if journal.activation.is_some() {
         for name in ["upper", "work"] {
             let path = target.path.join(name);
             if !path.exists() {
@@ -607,17 +723,7 @@ fn prepare(jobs: &Jobs, id: &str) -> Result<Journal> {
         }
     }
     mkdir(&base, 0o700)?;
-    let mut journal = Journal {
-        id: id.into(),
-        nonce: random_hex(16)?,
-        overlay,
-        activation,
-        phase: "building".into(),
-        original_lan: fs::read_to_string(jobs.root.join("etc/config/network"))
-            .ok()
-            .and_then(|text| crate::archive::lan_address(&text).ok())
-            .unwrap_or_default(),
-    };
+    journal.phase = "building".into();
     save_json(&base.join("journal.json"), &journal)?;
     save_json(&task.join("clean-overlay.json"), &journal)?;
     let mut state = jobs.load(id)?;
@@ -630,8 +736,13 @@ fn prepare(jobs: &Jobs, id: &str) -> Result<Journal> {
     mkdir(&upper, 0o755)?;
     mkdir(&base.join("alternate-work"), 0o755)?;
     bootstrap(jobs, id, &upper, &options)?;
+    let payload = if journal.payload_on_overlay {
+        base.join("payload")
+    } else {
+        task.join("payload")
+    };
     for entry in &plan.files {
-        let source = task.join("payload").join(&entry.path);
+        let source = payload.join(&entry.path);
         if digest_file(&source)? != entry.sha256 {
             bail!("Persistent payload changed: {}", entry.path);
         }
@@ -646,13 +757,25 @@ fn prepare(jobs: &Jobs, id: &str) -> Result<Journal> {
             0o600,
         )?;
     }
-    // Task payloads/originals are immutable and live on the same physical
-    // filesystem. Hard links retain history without copying entire old trees.
+    // Share immutable history on the same filesystem; extroot activation
+    // copies records that still live on the original filesystem.
     copy_tree(
         &jobs.directory,
         &upper.join("etc/overlay-restore/jobs"),
         true,
     )?;
+    if journal.payload_on_overlay {
+        // The payload is already on this filesystem, so history can share its
+        // immutable files without allocating another copy in the new upper.
+        copy_tree(
+            &payload,
+            &upper
+                .join("etc/overlay-restore/jobs")
+                .join(id)
+                .join("payload"),
+            true,
+        )?;
+    }
     for previous in jobs.states()? {
         if previous["id"] != id && previous["status"] == "ready" {
             let other = previous["id"].as_str().context("Task has no ID")?;
@@ -1312,6 +1435,7 @@ mod tests {
             phase: "prepared".into(),
             original_lan: "192.168.1.1".into(),
             activation: None,
+            payload_on_overlay: false,
             overlay: Overlay {
                 device: "/dev/loop0".into(),
                 identity: "7:0".into(),
@@ -1425,6 +1549,37 @@ mod tests {
         options.as_object_mut().unwrap().remove("clean_overlay");
         let options: Options = serde_json::from_value(options).unwrap();
         assert!(!options.clean_overlay);
+    }
+
+    #[test]
+    fn legacy_journals_keep_the_original_payload_location() {
+        let mut value = serde_json::to_value(journal()).unwrap();
+        value.as_object_mut().unwrap().remove("payload_on_overlay");
+        let loaded: Journal = serde_json::from_value(value).unwrap();
+        assert!(!loaded.payload_on_overlay);
+    }
+
+    #[test]
+    fn removing_staging_keeps_immutable_payload_history() {
+        let temporary = tempdir().unwrap();
+        let payload = temporary.path().join("staging/payload");
+        let history = temporary
+            .path()
+            .join("upper/etc/overlay-restore/jobs")
+            .join(ID)
+            .join("payload");
+        atomic_write(&payload.join("root/data"), b"backup data", 0o600).unwrap();
+        copy_tree(&payload, &history, true).unwrap();
+        assert_eq!(
+            fs::metadata(payload.join("root/data")).unwrap().ino(),
+            fs::metadata(history.join("root/data")).unwrap().ino()
+        );
+        fs::remove_dir_all(temporary.path().join("staging")).unwrap();
+        assert_eq!(fs::read(history.join("root/data")).unwrap(), b"backup data");
+        assert_eq!(
+            fs::metadata(history.join("root/data")).unwrap().mode() & 0o777,
+            0o600
+        );
     }
 
     #[test]
