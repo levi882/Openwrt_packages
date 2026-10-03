@@ -170,27 +170,27 @@
       "releases": [
         {
           "repository": "levi882/iptv",
-          "tag": "v0.1.0-r33"
+          "tag": "v0.1.0-r34"
         }
       ],
       "artifacts": [
         {
           "type": "file",
-          "url": "https://github.com/levi882/iptv/releases/download/v0.1.0-r33/iptv-refresh-0.1.0-r33.apk",
-          "sha256": "50b1aea6988731f1f55a8ec22e1fbfb513775ba51efa5c7d74fb6a3946b574df",
-          "output": "iptv-refresh-0.1.0-r33.apk"
+          "url": "https://github.com/levi882/iptv/releases/download/v0.1.0-r34/iptv-refresh-0.1.0-r34.apk",
+          "sha256": "f4c7e2d8cb6dfd34a8c58fdbbfc1990b9d00b3ddfb284f3924e1d7e2d665ddc3",
+          "output": "iptv-refresh-0.1.0-r34.apk"
         },
         {
           "type": "file",
-          "url": "https://github.com/levi882/iptv/releases/download/v0.1.0-r33/luci-app-iptv-refresh-0.1.0-r33.apk",
-          "sha256": "8e0ddcf0db05172d120705df24d153df3207b64ee3f5f090a9df8a0144e8f9ec",
-          "output": "luci-app-iptv-refresh-0.1.0-r33.apk"
+          "url": "https://github.com/levi882/iptv/releases/download/v0.1.0-r34/luci-app-iptv-refresh-0.1.0-r34.apk",
+          "sha256": "6596954031a9ab461ef7ea9aeefa7d9ce9d6feecf764ad2fff4a1f3dec3cfd44",
+          "output": "luci-app-iptv-refresh-0.1.0-r34.apk"
         },
         {
           "type": "file",
-          "url": "https://github.com/levi882/iptv/releases/download/v0.1.0-r33/luci-i18n-iptv-refresh-zh-cn-0.1.0-r33.apk",
-          "sha256": "b702a47f9cf033e04e95f8bb853f1ab2fa2e6f2e1afe42c538660bc98b2ceb1f",
-          "output": "luci-i18n-iptv-refresh-zh-cn-0.1.0-r33.apk"
+          "url": "https://github.com/levi882/iptv/releases/download/v0.1.0-r34/luci-i18n-iptv-refresh-zh-cn-0.1.0-r34.apk",
+          "sha256": "29e8e24a558129b248be6bbaeca76f10e937af75a099e2bb5610878280164f2e",
+          "output": "luci-i18n-iptv-refresh-zh-cn-0.1.0-r34.apk"
         }
       ]
     },
