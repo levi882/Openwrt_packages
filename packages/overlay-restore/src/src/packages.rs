@@ -32,10 +32,53 @@ fn tagged_name(line: &str) -> Option<&str> {
     Some(name)
 }
 
+fn retain_clean_feed_tag(jobs: &Jobs, id: &str) -> Result<()> {
+    let state = jobs.load(id)?;
+    if state["clean_overlay"]["phase"] != "switched"
+        || !fs::read_to_string(jobs.root.join("etc/overlay-restore/clean-id"))
+            .is_ok_and(|marker| marker == id)
+    {
+        return Ok(());
+    }
+    let world = jobs.root.join("etc/apk/world");
+    if !world.is_file()
+        || !fs::read_to_string(world)?
+            .lines()
+            .any(|line| tagged_name(line).is_some())
+    {
+        return Ok(());
+    }
+    let repo = jobs.root.join("etc/apk/repositories.d/00-myfeed.list");
+    let mut contents = if repo.is_file() {
+        fs::read_to_string(&repo)?
+    } else {
+        String::new()
+    };
+    if contents
+        .lines()
+        .any(|line| line.split_whitespace().next() == Some("@myfeed"))
+    {
+        return Ok(());
+    }
+    let plan: Plan = read_json(&jobs.path(id)?.join("plan.json"))?;
+    if contents.is_empty() {
+        contents = plan.myfeed_repo.clone();
+    }
+    if !contents.ends_with('\n') {
+        contents.push('\n');
+    }
+    contents.push_str(&format!("@myfeed {}\n", plan.myfeed_repo));
+    atomic_write(&repo, contents, 0o644)?;
+    jobs.log(
+        id,
+        "Retained the myfeed repository tag required by clean bootstrap packages.",
+    )
+}
+
 pub fn restore_repository(jobs: &Jobs, id: &str) -> Result<()> {
     let record_file = jobs.path(id)?.join("repository.json");
     if !record_file.exists() {
-        return Ok(());
+        return retain_clean_feed_tag(jobs, id);
     }
     let record: Repository = read_json(&record_file)?;
     let contents = if record.existed {
@@ -64,6 +107,7 @@ pub fn restore_repository(jobs: &Jobs, id: &str) -> Result<()> {
     }
     fs::remove_file(&record_file)?;
     sync_parent(&record_file)?;
+    retain_clean_feed_tag(jobs, id)?;
     jobs.log(
         id,
         "Restored repository configuration and removed temporary package tags.",

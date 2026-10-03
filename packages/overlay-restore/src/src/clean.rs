@@ -445,7 +445,7 @@ fn bootstrap(jobs: &Jobs, id: &str, upper: &Path, options: &Options) -> Result<(
         "--no-scripts",
         "--no-commit-hooks",
         "add",
-        "overlay-restore@myfeed>=0.2.0-r9",
+        "overlay-restore@myfeed>=0.2.0-r10",
         "luci-app-overlay-restore@myfeed>=0.2.0-r14",
     ];
     for (name, argument) in [("smartdns", "smartdns@myfeed"), ("nikki", "nikki@myfeed")] {
@@ -464,11 +464,11 @@ fn bootstrap(jobs: &Jobs, id: &str, upper: &Path, options: &Options) -> Result<(
         );
     }
     fs::remove_file(repository)?;
-    // Keep the frozen feed available after boot; package recovery tags it only
-    // for its transaction and restores this untagged entry afterwards.
+    // Keep the feed available for normal installs and for the bootstrap world
+    // constraints. Recovery restores both entries after its transaction.
     atomic_write(
         &upper.join("etc/apk/repositories.d/00-myfeed.list"),
-        format!("{}\n", options.myfeed_repo).as_bytes(),
+        format!("{}\n@myfeed {}\n", options.myfeed_repo, options.myfeed_repo).as_bytes(),
         0o600,
     )?;
     for relative in [
