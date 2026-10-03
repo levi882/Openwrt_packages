@@ -39,31 +39,31 @@
       "releases": [
         {
           "repository": "timsaya/openwrt-bandix",
-          "tag": "v0.12.10"
+          "tag": "v0.12.11"
         },
         {
           "repository": "timsaya/luci-app-bandix",
-          "tag": "v0.12.11"
+          "tag": "v0.12.12"
         }
       ],
       "artifacts": [
         {
           "type": "file",
-          "url": "https://github.com/timsaya/openwrt-bandix/releases/download/v0.12.10/bandix-0.12.10-r1_x86_64.apk",
-          "sha256": "2cd573a6d547f678ed8e5787d6bc1cc1655d874ad539e6a66a2e7c27cc62b1a8",
-          "output": "bandix-0.12.10-r1.apk"
+          "url": "https://github.com/timsaya/openwrt-bandix/releases/download/v0.12.11/bandix-0.12.11-r1_x86_64.apk",
+          "sha256": "1ede36d2c63bb13ea35550c1b73a7296c65f7bbe851e06a587f93b30ceceae3b",
+          "output": "bandix-0.12.11-r1.apk"
         },
         {
           "type": "file",
-          "url": "https://github.com/timsaya/luci-app-bandix/releases/download/v0.12.11/luci-app-bandix-0.12.11-r1_all.apk",
-          "sha256": "b2415021d016404f7be7672352015f75017c4a3d3f847235d16ac25f0dbc74ee",
-          "output": "luci-app-bandix-0.12.11-r1.apk"
+          "url": "https://github.com/timsaya/luci-app-bandix/releases/download/v0.12.12/luci-app-bandix-0.12.12-r1_all.apk",
+          "sha256": "bba029a07618ab738ad5f3a27d54e29df6e9583d9f3f594334a727db48a52feb",
+          "output": "luci-app-bandix-0.12.12-r1.apk"
         },
         {
           "type": "file",
-          "url": "https://github.com/timsaya/luci-app-bandix/releases/download/v0.12.11/luci-i18n-bandix-zh-cn-26.249.51071.0bd9b61_all.apk",
-          "sha256": "b1089b2d640734b1c68195d7abaf7170b548c08d525576b1549d4bb2ce07c9c2",
-          "output": "luci-i18n-bandix-zh-cn-26.249.51071~0bd9b61.apk"
+          "url": "https://github.com/timsaya/luci-app-bandix/releases/download/v0.12.12/luci-i18n-bandix-zh-cn-26.271.52516.159a6de_all.apk",
+          "sha256": "cb55b6c6831d163051b59199ed72faad9cbfc4545d7df37b632c8e4cb63b4142",
+          "output": "luci-i18n-bandix-zh-cn-26.271.52516~159a6de.apk"
         }
       ]
     },
@@ -270,27 +270,27 @@
       "releases": [
         {
           "repository": "stackia/rtp2httpd",
-          "tag": "v3.17.1"
+          "tag": "v3.17.2"
         }
       ],
       "artifacts": [
         {
           "type": "file",
-          "url": "https://github.com/stackia/rtp2httpd/releases/download/v3.17.1/rtp2httpd-3.17.1-r1_x86_64.apk",
-          "sha256": "b092184aa3c1ca4d341168cc0a39ad906ad16455ece43d268e4db7450a8eb26b",
-          "output": "rtp2httpd-3.17.1-r1.apk"
+          "url": "https://github.com/stackia/rtp2httpd/releases/download/v3.17.2/rtp2httpd-3.17.2-r1_x86_64.apk",
+          "sha256": "02c60e8eec4c82c4746d19d80ce68f5b8d42dfee68e1861c3c42b4732dd15f79",
+          "output": "rtp2httpd-3.17.2-r1.apk"
         },
         {
           "type": "file",
-          "url": "https://github.com/stackia/rtp2httpd/releases/download/v3.17.1/luci-app-rtp2httpd-3.17.1-r1.apk",
-          "sha256": "447d2c8583b41bbad1ad97a3a76a58c7d0e596c77cb67e4fad4de6fb8038fb57",
-          "output": "luci-app-rtp2httpd-3.17.1-r1.apk"
+          "url": "https://github.com/stackia/rtp2httpd/releases/download/v3.17.2/luci-app-rtp2httpd-3.17.2-r1.apk",
+          "sha256": "8ae1d9aabe35e32f84cbb88527080a8fcc6f956a27827097c8709b5e26c85387",
+          "output": "luci-app-rtp2httpd-3.17.2-r1.apk"
         },
         {
           "type": "file",
-          "url": "https://github.com/stackia/rtp2httpd/releases/download/v3.17.1/luci-i18n-rtp2httpd-zh-cn-3.17.1.apk",
-          "sha256": "6596202e94f96041a18dfa713879dd7d0ab7b479ca223976ea04269468a1f4fd",
-          "output": "luci-i18n-rtp2httpd-zh-cn-3.17.1.apk"
+          "url": "https://github.com/stackia/rtp2httpd/releases/download/v3.17.2/luci-i18n-rtp2httpd-zh-cn-3.17.2.apk",
+          "sha256": "148467ff0b9d72a3d6045816293a85db286c5f3e417743c57e5a21bd38359558",
+          "output": "luci-i18n-rtp2httpd-zh-cn-3.17.2.apk"
         }
       ]
     },
