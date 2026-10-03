@@ -152,6 +152,10 @@ squashfs + OverlayFS 的标准 upper/work 布局；平铺 ext4 根文件系统�
 无需手动格式化、重新挂载或运行脚本。
 仅保存设置或检查备份不会清理系统；确认「执行恢复」后按以下流程执行：
 
+开启重建功能后，待恢复文件直接暂存到所选 overlay 分区，当前系统只保留任务记录。
+升级后尚未启用外部 overlay 时，空间检查和文件暂存也使用所选外部分区，
+不会要求内部 overlay 同时容纳整份恢复文件。空间不足的报错显示检查位置、可用容量和所需容量。
+
 1. 在选定文件系统的独立暂存目录准备新 upper/work；尚未挂载的外部分区临时挂载，原系统继续运行。
 2. 从当前固件的 APK 数据库及软件源安装恢复工具和所需 DNS/代理程序，再按计划写入备份配置及自定义文件。
 3. 通过 procd 停止服务、进入 RAM、卸载当前 overlay，再交换新旧 upper/work；需要时启用选定分区为 extroot，然后重启。此过程不刷写固件、不格式化磁盘。
@@ -193,7 +197,8 @@ overlay-restore discard-overlay TASK_ID --confirm TASK_ID
 再点击「使用当前目录」即可回填。QuickFile 使用现有 LuCI 登录会话，按其现有文件管理权限运行。
 现有 `00-myfeed.list` 优先于默认源，源地址会在检查时冻结。
 默认上传上限 256 MiB、展开上限 2048 MiB，实际可处理大小还受 `/tmp` 和 overlay 空间限制。
-确认阶段会为待写入文件、原始文件和原子替换预留空间。
+普通迁移在当前系统为待写入文件、原始文件和原子替换预留空间；重建干净 overlay 时，
+在所选分区为待恢复文件和新环境预留空间，并保留旧环境用于回退。
 
 CLI 保留原脚本的 `RESTORE_INSTALL_PACKAGES`、`RESTORE_MYFEED_INSTALL_PACKAGES`、
 `RESTORE_MYFEED_OPTIONAL_INSTALL_PACKAGES`、`RESTORE_REMOVE_PREINSTALLED_LUCI_PACKAGES`

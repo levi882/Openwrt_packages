@@ -178,6 +178,19 @@ pub fn disk_free(path: &Path) -> Result<u64> {
     Ok(information.f_bavail.saturating_mul(information.f_frsize))
 }
 
+pub fn require_space(path: &Path, required: u64, purpose: &str) -> Result<()> {
+    let available = disk_free(path)?;
+    if available < required {
+        bail!(
+            "Insufficient storage for {purpose}: {} has {} MiB available; {} MiB required",
+            path.display(),
+            available / (1024 * 1024),
+            required.div_ceil(1024 * 1024),
+        );
+    }
+    Ok(())
+}
+
 pub struct Lock(File);
 impl Lock {
     pub fn acquire(path: &Path, blocking: bool) -> Result<Self> {

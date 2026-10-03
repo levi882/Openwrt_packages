@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=overlay-restore
 PKG_VERSION:=0.2.0
-PKG_RELEASE:=7
+PKG_RELEASE:=8
 PKG_LICENSE:=MIT
 
 OVERLAY_RESTORE_CARGO?=cargo
