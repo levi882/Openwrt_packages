@@ -551,6 +551,10 @@ return view.extend({
             const option = section.taboption('general', form.Flag, item[0], item[1], item[2]);
             option.rmempty = false;
         });
+        const bootstrap = section.taboption('general', form.Flag, 'upgrade_bootstrap', '保留配置升级后自动装回恢复工具',
+            '勾选（默认）：固件升级时选择「保留配置」，下次启动后等待网络可用，从已签名的 myfeed 安装缺失的恢复后端和页面。仅适用于 OpenWrt 25.12 x86_64。装回工具后仍需选择备份并确认恢复计划。');
+        bootstrap.default = '1';
+        bootstrap.rmempty = false;
         const target = section.taboption('general', OverlayTarget, 'overlay_device', '恢复目标 overlay',
             '通过 DiskMan 点击分区条或分区行选择，也可使用下拉框。支持当前 overlay，或需要重新启用为 extroot 的 ext4 / f2fs 分区。执行时会临时挂载未挂载分区，重建系统 upper/work，并按 UUID 启用 extroot；其他目录保留。插入磁盘后刷新页面可重新读取分区。');
         target.devices = data[2];

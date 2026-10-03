@@ -459,6 +459,14 @@ fn overlay_layout_prunes_packaged_and_runtime_files() {
             ("overlay/upper/usr/bin/custom", b"user program"),
             ("overlay/upper/lib/apk/packages/old.list", b"/usr/bin/old\n"),
             ("overlay/upper/etc/apk/keys/myfeed.pem", b"old key"),
+            (
+                "overlay/upper/etc/overlay-restore-bootstrap/run",
+                b"old bootstrap",
+            ),
+            (
+                "overlay/upper/etc/overlay-restore-bootstrap/myfeed.pem",
+                b"old bootstrap key",
+            ),
             ("overlay/upper/lib/modules/old/kernel.ko", b"module"),
             (
                 "overlay/upper/www/luci-static/resources/view/system/overlay-restore.js",

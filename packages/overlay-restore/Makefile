@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=overlay-restore
 PKG_VERSION:=0.2.0
-PKG_RELEASE:=10
+PKG_RELEASE:=11
 PKG_LICENSE:=MIT
 
 OVERLAY_RESTORE_CARGO?=cargo
@@ -48,6 +48,7 @@ endef
 define Package/overlay-restore/postinst
 #!/bin/sh
 if [ -z "$${IPKG_INSTROOT}" ]; then
+	/etc/overlay-restore-bootstrap/run setup >/dev/null 2>&1 || true
 	/etc/init.d/overlay-restore enable
 	/etc/init.d/overlay-restore restart >/dev/null 2>&1 || true
 fi
@@ -56,11 +57,16 @@ endef
 
 define Package/overlay-restore/install
 	$(INSTALL_DIR) $(1)/usr/sbin $(1)/usr/libexec $(1)/lib/upgrade $(1)/etc/init.d $(1)/etc/config
+	$(INSTALL_DIR) $(1)/etc/overlay-restore-bootstrap $(1)/lib/upgrade/keep.d
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/target/x86_64-unknown-linux-musl/release/overlay-restore $(1)/usr/sbin/
 	$(INSTALL_BIN) ./files/etc/init.d/overlay-restore $(1)/etc/init.d/
 	$(INSTALL_DATA) ./files/etc/config/overlay_restore $(1)/etc/config/
 	$(INSTALL_BIN) ./files/usr/libexec/overlay-restore-switch $(1)/usr/libexec/
 	$(INSTALL_DATA) ./files/lib/upgrade/zz-overlay-restore.sh $(1)/lib/upgrade/
+	$(INSTALL_BIN) ./files/etc/overlay-restore-bootstrap/run $(1)/etc/overlay-restore-bootstrap/
+	$(INSTALL_DATA) ./files/etc/overlay-restore-bootstrap/init ./files/etc/overlay-restore-bootstrap/myfeed.pem $(1)/etc/overlay-restore-bootstrap/
+	$(INSTALL_DATA) ./files/lib/upgrade/keep.d/overlay-restore-bootstrap $(1)/lib/upgrade/keep.d/
+	chmod 0700 $(1)/etc/overlay-restore-bootstrap
 	chmod 0600 $(1)/etc/config/overlay_restore
 endef
 

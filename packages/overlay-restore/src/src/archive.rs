@@ -348,6 +348,7 @@ fn exclusion(
         "etc/opkg",
         "usr/lib/opkg",
         "etc/overlay-restore",
+        "etc/overlay-restore-bootstrap",
         "usr/libexec/overlay-restore",
         "usr/sbin/overlay-restore",
         "usr/libexec/rpcd",
