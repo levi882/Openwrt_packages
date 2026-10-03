@@ -7,6 +7,7 @@
 'require poll';
 'require dom';
 'require fs';
+'require overlay_restore.diskman as diskman';
 
 const callList = rpc.declare({ object: 'overlay-restore', method: 'list', expect: { '': {} } });
 const callDevices = rpc.declare({ object: 'overlay-restore', method: 'devices', expect: { '': {} } });
@@ -190,6 +191,45 @@ function openQuickFile(options) {
                 'QuickFile 页面暂不可用。请先安装并启动 luci-app-quickfile，确认 QuickFile 的独立页面能够正常打开。'));
     }).finally(function() { window.clearTimeout(timeout); });
 }
+
+const OverlayTarget = form.ListValue.extend({
+    renderWidget: function(sectionId, optionIndex, cfgvalue) {
+        return Promise.resolve(this.super('renderWidget', [ sectionId, optionIndex, cfgvalue ])).then(L.bind(function(inputNode) {
+            const info = E('p', { 'class': 'cbi-value-description' });
+            const update = L.bind(function() {
+                const value = this.formvalue(sectionId);
+                const current = this.devices.current;
+                const device = !value || current && current.device === value ? current :
+                    (this.devices.devices || []).find(function(item) { return item.device === value; });
+                dom.content(info, device ? '已选择：' + device.device + ' · ' + device.filesystem +
+                    (device.uuid ? ' · UUID ' + device.uuid : ' · 当前 overlay') : value ? value + ' · 当前不可用，请重新选择' : '当前 overlay');
+            }, this);
+            inputNode.addEventListener('change', update);
+            inputNode.addEventListener('widget-change', update);
+            const button = E('button', {
+                'class': 'btn', 'disabled': this.map.readonly || null,
+                'click': ui.createHandlerFn(this, function() {
+                    return diskman.open({
+                        values: this.keylist,
+                        load: function() { return callDevices().then(checked); },
+                        enabled: L.bind(function() { return !this.map.readonly; }, this),
+                        select: L.bind(function(value, data) {
+                            this.devices = data;
+                            const input = this.getUIElement(sectionId);
+                            input.setValue(value);
+                            input.triggerValidation();
+                            input.node.dispatchEvent(new CustomEvent('widget-change', { bubbles: true }));
+                            update();
+                        }, this)
+                    });
+                })
+            }, '打开 DiskMan 选择分区');
+            // formvalue() resolves the widget after the form has been attached.
+            window.setTimeout(update, 0);
+            return E('div', {}, [ inputNode, info, button ]);
+        }, this));
+    }
+});
 
 const DirectoryPath = form.Value.extend({
     renderWidget: function(sectionId, optionIndex, cfgvalue) {
@@ -511,8 +551,9 @@ return view.extend({
             const option = section.taboption('general', form.Flag, item[0], item[1], item[2]);
             option.rmempty = false;
         });
-        const target = section.taboption('general', form.ListValue, 'overlay_device', '恢复目标 overlay',
-            '选择当前 overlay，或需要重新启用为 extroot 的 ext4 / f2fs 分区。执行时会临时挂载未挂载分区，重建系统 upper/work，并按 UUID 启用 extroot；不格式化分区，其他目录保留。插入磁盘后刷新页面可重新读取分区。');
+        const target = section.taboption('general', OverlayTarget, 'overlay_device', '恢复目标 overlay',
+            '通过 DiskMan 点击分区条或分区行选择，也可使用下拉框。支持当前 overlay，或需要重新启用为 extroot 的 ext4 / f2fs 分区。执行时会临时挂载未挂载分区，重建系统 upper/work，并按 UUID 启用 extroot；其他目录保留。插入磁盘后刷新页面可重新读取分区。');
+        target.devices = data[2];
         target.depends('clean_overlay', '1');
         target.rmempty = false;
         target.value('', data[2].current ? '当前 overlay（' + data[2].current.device + '）' : '当前 overlay');

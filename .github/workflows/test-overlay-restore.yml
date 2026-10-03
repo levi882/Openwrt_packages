@@ -22,7 +22,9 @@ jobs:
       - name: verify recovery backend
         run: bash scripts/test-restore-rust.sh
       - name: check LuCI JavaScript
-        run: node --check packages/luci-app-overlay-restore/htdocs/luci-static/resources/view/system/overlay-restore.js
+        run: |
+          node --check packages/luci-app-overlay-restore/htdocs/luci-static/resources/view/system/overlay-restore.js
+          node --check packages/luci-app-overlay-restore/htdocs/luci-static/resources/overlay_restore/diskman.js
       - name: check shell syntax
         run: |
           bash -n scripts/build-local-apks.sh scripts/setup-restore-rust.sh scripts/test-restore-rust.sh
