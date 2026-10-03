@@ -75,6 +75,10 @@ fn minimal_options() -> Options {
 struct MockState {
     installed: HashSet<String>,
     failed: HashSet<String>,
+    dependents: BTreeMap<String, Vec<String>>,
+    dependencies: BTreeMap<String, Vec<String>>,
+    failed_probes: HashSet<String>,
+    remove_exit_code: i32,
     commands: Vec<Vec<String>>,
     settings: BTreeMap<String, String>,
 }
@@ -94,6 +98,9 @@ impl Runner for MockRunner {
                 .unwrap()
                 .to_owned();
             if arguments.iter().any(|argument| argument == "info") {
+                if state.failed_probes.contains(&package) {
+                    return (1, "Command timed out".to_owned());
+                }
                 return (
                     i32::from(!state.installed.contains(&package)),
                     String::new(),
@@ -103,9 +110,48 @@ impl Runner for MockRunner {
                 if state.failed.contains(&package) {
                     return (1, "repository download failed".to_owned());
                 }
+                if let Some(dependencies) = state.dependencies.get(&package).cloned() {
+                    state.installed.extend(dependencies);
+                }
                 state.installed.insert(package);
-            } else if arguments.iter().any(|argument| argument == "del") {
-                state.installed.remove(&package);
+            } else if let Some(position) = arguments.iter().position(|argument| argument == "del") {
+                let requested: HashSet<_> = arguments[position + 1..].iter().cloned().collect();
+                let mut removable = requested.clone();
+                loop {
+                    let blocked: Vec<_> = removable
+                        .iter()
+                        .filter(|package| {
+                            state.dependents.get(*package).is_some_and(|dependents| {
+                                dependents.iter().any(|dependent| {
+                                    state.installed.contains(dependent)
+                                        && !removable.contains(dependent)
+                                })
+                            })
+                        })
+                        .cloned()
+                        .collect();
+                    if blocked.is_empty() {
+                        break;
+                    }
+                    for package in blocked {
+                        removable.remove(&package);
+                    }
+                }
+                for package in &removable {
+                    state.installed.remove(package);
+                }
+                let retained: Vec<_> = requested.difference(&removable).cloned().collect();
+                return (
+                    state.remove_exit_code,
+                    if retained.is_empty() {
+                        String::new()
+                    } else {
+                        format!(
+                            "Packages retained due to dependencies: {}",
+                            retained.join(" ")
+                        )
+                    },
+                );
             }
         }
         if arguments[0] == "uci" {
@@ -942,6 +988,252 @@ fn package_retry_preserves_configuration_edited_after_restore() {
             .iter()
             .flatten()
             .any(|argument| argument == "--force-broken-world")
+    );
+}
+
+#[test]
+fn selected_applications_translations_and_themes_are_removed_together() {
+    let mut fixture = Fixture::new();
+    fixture.options.remove_packages = [
+        "luci-theme-argon",
+        "luci-app-argon-config",
+        "luci-app-nlbwmon",
+        "luci-i18n-argon-config-zh-cn",
+        "luci-i18n-nlbwmon-zh-cn",
+    ]
+    .map(str::to_owned)
+    .to_vec();
+    {
+        let mut state = fixture.runner.0.lock().unwrap();
+        state
+            .installed
+            .extend(fixture.options.remove_packages.clone());
+        state.installed.insert("luci-base".to_owned());
+        state.dependents = BTreeMap::from([
+            (
+                "luci-theme-argon".to_owned(),
+                vec!["luci-app-argon-config".to_owned()],
+            ),
+            (
+                "luci-app-argon-config".to_owned(),
+                vec!["luci-i18n-argon-config-zh-cn".to_owned()],
+            ),
+            (
+                "luci-app-nlbwmon".to_owned(),
+                vec!["luci-i18n-nlbwmon-zh-cn".to_owned()],
+            ),
+        ]);
+    }
+    let id = fixture.applied();
+    fixture.jobs.boot_id = Some("after".to_owned());
+    fixture.jobs.worker(true).unwrap();
+    let task = fixture.jobs.load(&id).unwrap();
+    assert_eq!(task["status"], "complete");
+    let state = fixture.runner.0.lock().unwrap();
+    for package in &fixture.options.remove_packages {
+        assert!(!state.installed.contains(package));
+        assert_eq!(task["packages"][package]["status"], "removed");
+    }
+    assert!(state.installed.contains("luci-base"));
+    assert_eq!(
+        state
+            .commands
+            .iter()
+            .filter(|arguments| arguments.iter().any(|argument| argument == "del"))
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn removal_retains_unselected_dependents_and_reports_each_package_result() {
+    let mut fixture = Fixture::new();
+    fixture.options.remove_packages = [
+        "luci-app-ddns",
+        "luci-app-nlbwmon",
+        "luci-i18n-nlbwmon-zh-cn",
+        "luci-app-not-installed",
+    ]
+    .map(str::to_owned)
+    .to_vec();
+    {
+        let mut state = fixture.runner.0.lock().unwrap();
+        state
+            .installed
+            .extend(fixture.options.remove_packages[..3].iter().cloned());
+        state.installed.insert("luci-app-other-plugin".to_owned());
+        state.dependents = BTreeMap::from([
+            (
+                "luci-app-ddns".to_owned(),
+                vec!["luci-app-other-plugin".to_owned()],
+            ),
+            (
+                "luci-app-nlbwmon".to_owned(),
+                vec!["luci-i18n-nlbwmon-zh-cn".to_owned()],
+            ),
+        ]);
+        state.remove_exit_code = 1;
+    }
+    let id = fixture.applied();
+    fixture.jobs.boot_id = Some("after".to_owned());
+    fixture.jobs.worker(true).unwrap();
+    let task = fixture.jobs.load(&id).unwrap();
+    assert_eq!(task["status"], "failed_packages");
+    assert_eq!(task["error"], "luci-app-ddns");
+    assert_eq!(task["packages"]["luci-app-ddns"]["status"], "failed");
+    assert!(
+        task["packages"]["luci-app-ddns"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("dependencies")
+    );
+    for package in &fixture.options.remove_packages[1..] {
+        assert_eq!(task["packages"][package]["status"], "removed");
+    }
+    let state = fixture.runner.0.lock().unwrap();
+    assert!(state.installed.contains("luci-app-other-plugin"));
+    assert!(state.installed.contains("luci-app-ddns"));
+    let removal = state
+        .commands
+        .iter()
+        .find(|arguments| arguments.iter().any(|argument| argument == "del"))
+        .unwrap();
+    assert_eq!(&removal[4..], &fixture.options.remove_packages[..3]);
+    assert!(
+        !removal
+            .iter()
+            .any(|argument| argument.starts_with("--force") || argument == "--rdepends")
+    );
+}
+
+#[test]
+fn later_dependency_installation_clears_an_earlier_download_failure() {
+    let mut fixture = Fixture::new();
+    fixture.options.myfeed_packages = ["luci-app-homebox", "luci-i18n-homebox-zh-cn"]
+        .map(str::to_owned)
+        .to_vec();
+    write(
+        &fixture.root.join("etc/apk/keys/myfeed.pem"),
+        "fixture public key",
+    );
+    {
+        let mut state = fixture.runner.0.lock().unwrap();
+        state.failed.insert("luci-app-homebox".to_owned());
+        state.dependencies.insert(
+            "luci-i18n-homebox-zh-cn".to_owned(),
+            vec!["luci-app-homebox".to_owned()],
+        );
+    }
+    let id = fixture.applied();
+    fixture.jobs.boot_id = Some("after".to_owned());
+    fixture.jobs.worker(true).unwrap();
+    let task = fixture.jobs.load(&id).unwrap();
+    assert_eq!(task["status"], "complete");
+    assert_eq!(task["error"], "");
+    assert_eq!(task["packages"]["luci-app-homebox"]["status"], "installed");
+    assert!(
+        fixture
+            .runner
+            .0
+            .lock()
+            .unwrap()
+            .commands
+            .iter()
+            .any(|arguments| arguments
+                .last()
+                .is_some_and(|argument| argument == "luci-app-homebox@myfeed"))
+    );
+}
+
+#[test]
+fn failed_tagged_install_does_not_accept_an_existing_package_as_success() {
+    let mut fixture = Fixture::new();
+    fixture.options.myfeed_packages = vec!["luci-app-homebox".to_owned()];
+    write(
+        &fixture.root.join("etc/apk/keys/myfeed.pem"),
+        "fixture public key",
+    );
+    {
+        let mut state = fixture.runner.0.lock().unwrap();
+        state.installed.insert("luci-app-homebox".to_owned());
+        state.failed.insert("luci-app-homebox".to_owned());
+    }
+    let id = fixture.applied();
+    fixture.jobs.boot_id = Some("after".to_owned());
+    fixture.jobs.worker(true).unwrap();
+    let task = fixture.jobs.load(&id).unwrap();
+    assert_eq!(task["status"], "failed_packages");
+    assert_eq!(task["error"], "luci-app-homebox");
+    assert_eq!(task["packages"]["luci-app-homebox"]["status"], "failed");
+    assert!(
+        fixture
+            .runner
+            .0
+            .lock()
+            .unwrap()
+            .installed
+            .contains("luci-app-homebox")
+    );
+}
+
+#[test]
+fn later_dependencies_do_not_hide_a_package_that_was_reinstalled_after_removal() {
+    let mut fixture = Fixture::new();
+    fixture.options.remove_packages = vec!["luci-app-ddns".to_owned()];
+    {
+        let mut state = fixture.runner.0.lock().unwrap();
+        state.installed.insert("luci-app-ddns".to_owned());
+        state
+            .dependencies
+            .insert("curl".to_owned(), vec!["luci-app-ddns".to_owned()]);
+    }
+    let id = fixture.applied();
+    fixture.jobs.boot_id = Some("after".to_owned());
+    fixture.jobs.worker(true).unwrap();
+    let task = fixture.jobs.load(&id).unwrap();
+    assert_eq!(task["status"], "failed_packages");
+    assert_eq!(task["error"], "luci-app-ddns");
+    assert_eq!(task["packages"]["luci-app-ddns"]["status"], "failed");
+    assert!(
+        fixture
+            .runner
+            .0
+            .lock()
+            .unwrap()
+            .installed
+            .contains("luci-app-ddns")
+    );
+}
+
+#[test]
+fn a_failed_package_probe_does_not_report_successful_removal() {
+    let mut fixture = Fixture::new();
+    fixture.options.remove_packages = vec!["luci-app-ddns".to_owned()];
+    let id = fixture.applied();
+    fixture.jobs.boot_id = Some("after".to_owned());
+    {
+        let mut state = fixture.runner.0.lock().unwrap();
+        state.installed.insert("luci-app-ddns".to_owned());
+        state.failed_probes.insert("luci-app-ddns".to_owned());
+    }
+    fixture.jobs.worker(true).unwrap();
+    let task = fixture.jobs.load(&id).unwrap();
+    assert_eq!(task["status"], "failed_packages");
+    assert!(
+        task["error"]
+            .as_str()
+            .unwrap()
+            .contains("Unable to check installed package luci-app-ddns")
+    );
+    assert_ne!(task["packages"]["luci-app-ddns"]["status"], "removed");
+    assert!(
+        fixture
+            .runner
+            .0
+            .lock()
+            .unwrap()
+            .installed
+            .contains("luci-app-ddns")
     );
 }
 

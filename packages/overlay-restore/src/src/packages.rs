@@ -5,6 +5,7 @@ use crate::util::{atomic_write, read_json, save_json, sync_parent, tail};
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use std::collections::HashSet;
 use std::fs;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -220,14 +221,26 @@ fn execute(
 }
 
 fn installed(jobs: &Jobs, id: &str, deadline: Instant, package: &str) -> Result<bool> {
-    Ok(execute(
+    let (code, output) = execute(
         jobs,
         id,
         deadline,
         &["apk", "--wait", "30", "info", "-e", package],
         40,
-    )?
-    .0 == 0)
+    )?;
+    if code == 0 {
+        return Ok(true);
+    }
+    // `info -e` returns one without an error for an absent package. Do not
+    // confuse a timed-out or failed probe with a successful removal.
+    if code == 1
+        && output
+            .lines()
+            .all(|line| line.trim().is_empty() || line.starts_with("WARNING: "))
+    {
+        return Ok(false);
+    }
+    bail!("Unable to check installed package {package} (exit {code}): {output}")
 }
 
 fn record(
@@ -273,31 +286,47 @@ pub fn install_packages(jobs: &Jobs, id: &str) -> Result<()> {
         if !updated {
             bail!("Package repositories are unavailable; the restored configuration is retained");
         }
+        let mut removals = Vec::new();
         for package in &options.remove_packages {
-            record(jobs, &mut state, package, "running", "remove", true, "")?;
             if installed(jobs, id, deadline, package)? {
-                let (code, output) = execute(
-                    jobs,
-                    id,
-                    deadline,
-                    &["apk", "--wait", "30", "del", package],
-                    120,
-                )?;
-                if code != 0 || installed(jobs, id, deadline, package)? {
-                    record(jobs, &mut state, package, "failed", "remove", true, &output)?;
-                    failures.push(package.clone());
-                    continue;
+                record(jobs, &mut state, package, "running", "remove", true, "")?;
+                removals.push(package.as_str());
+            } else {
+                record(jobs, &mut state, package, "removed", "remove", true, "")?;
+            }
+        }
+        if !removals.is_empty() {
+            // Resolve the selected applications, translations and themes together.
+            // Separate transactions can retain an application until its selected
+            // translation is removed, leaving an obsolete failure in the task.
+            let mut arguments = vec!["apk", "--wait", "30", "del"];
+            arguments.extend(&removals);
+            let (code, output) = execute(jobs, id, deadline, &arguments, 120)?;
+            for package in removals {
+                if Instant::now() >= deadline || installed(jobs, id, deadline, package)? {
+                    let message = if output.trim().is_empty() {
+                        format!("Package remains installed after removal (exit {code})")
+                    } else {
+                        output.clone()
+                    };
+                    record(
+                        jobs, &mut state, package, "failed", "remove", true, &message,
+                    )?;
+                    failures.push(package.to_owned());
+                } else {
+                    record(jobs, &mut state, package, "removed", "remove", true, "")?;
                 }
             }
-            record(jobs, &mut state, package, "removed", "remove", true, "")?;
         }
+        let mut missing_installations = HashSet::new();
         for (packages, tagged, required) in [
             (&options.install_packages, false, true),
             (&options.myfeed_packages, true, true),
             (&options.optional_packages, true, false),
         ] {
             for package in packages {
-                if installed(jobs, id, deadline, package)?
+                let present_before = installed(jobs, id, deadline, package)?;
+                if present_before
                     && (!tagged || state["packages"][package]["status"] == "installed")
                 {
                     record(
@@ -310,6 +339,9 @@ pub fn install_packages(jobs: &Jobs, id: &str) -> Result<()> {
                         "",
                     )?;
                     continue;
+                }
+                if !present_before {
+                    missing_installations.insert(package.as_str());
                 }
                 record(
                     jobs, &mut state, package, "running", "install", required, "",
@@ -345,6 +377,55 @@ pub fn install_packages(jobs: &Jobs, id: &str) -> Result<()> {
                         required,
                         "",
                     )?;
+                }
+            }
+        }
+        // Later dependency transactions can finish an earlier failed install,
+        // or install a package that an earlier removal had just removed.
+        // Report the final package state rather than an intermediate result.
+        for (packages, operation, required) in [
+            (&options.remove_packages, "remove", true),
+            (&options.install_packages, "install", true),
+            (&options.myfeed_packages, "install", true),
+            (&options.optional_packages, "install", false),
+        ] {
+            for package in packages {
+                if Instant::now() >= deadline {
+                    break;
+                }
+                if operation == "install"
+                    && (state["packages"][package]["status"] != "failed"
+                        || !missing_installations.contains(package.as_str()))
+                {
+                    continue;
+                }
+                let present = installed(jobs, id, deadline, package)?;
+                if present == (operation == "install") {
+                    record(
+                        jobs,
+                        &mut state,
+                        package,
+                        if present { "installed" } else { "removed" },
+                        operation,
+                        required,
+                        "",
+                    )?;
+                    failures.retain(|failed| failed != package);
+                    warnings.retain(|warning| {
+                        warning != &format!("Optional package unavailable: {package}")
+                    });
+                } else if operation == "remove" && state["packages"][package]["status"] != "failed"
+                {
+                    record(
+                        jobs,
+                        &mut state,
+                        package,
+                        "failed",
+                        operation,
+                        required,
+                        "Package is still installed after dependency resolution",
+                    )?;
+                    failures.push(package.clone());
                 }
             }
         }
