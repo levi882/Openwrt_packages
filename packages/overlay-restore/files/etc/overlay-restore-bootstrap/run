@@ -1,0 +1,186 @@
+#!/bin/sh
+
+# This directory and the generated init hook are explicitly kept by sysupgrade.
+# The init hook is generated rather than APK-owned: repairing this package must
+# not stop its own installer through APK's default prerm service handling.
+set -f
+umask 077
+bootstrap_root=$OVERLAY_RESTORE_BOOTSTRAP_ROOT
+case "$bootstrap_root" in ''|/*) ;; *) exit 2 ;; esac
+bootstrap_dir="$bootstrap_root/etc/overlay-restore-bootstrap"
+logfile="$bootstrap_dir/boot.log"
+lockdir="$bootstrap_root/tmp/overlay-restore-bootstrap.lock"
+repofile="$bootstrap_root/etc/apk/repositories.d/00-myfeed.list"
+default_repo=https://openwrt-packages.pages.dev/openwrt-25.12/x86_64/myfeed/packages.adb
+
+config() {
+    uci -c "$bootstrap_root/etc/config" -q get "overlay_restore.main.$1"
+}
+
+enabled() {
+    [ "$(uci -c "$bootstrap_root/etc/config" -q get overlay_restore.main)" = restore ] || return 1
+    bootstrap_enabled=$(config upgrade_bootstrap)
+    [ -n "$bootstrap_enabled" ] || bootstrap_enabled=1
+    [ "$bootstrap_enabled" = 1 ]
+}
+
+apk_command() {
+    if [ -n "$bootstrap_root" ]; then
+        apk --root "$bootstrap_root" --wait 30 --timeout 20 "$@"
+    else
+        apk --wait 30 --timeout 20 "$@"
+    fi
+}
+
+installed() {
+    [ -x "$bootstrap_root/usr/sbin/overlay-restore" ] &&
+        [ -x "$bootstrap_root/usr/libexec/rpcd/overlay-restore" ] &&
+        [ -s "$bootstrap_root/www/luci-static/resources/view/system/overlay-restore.js" ] &&
+        apk_command info -e overlay-restore >/dev/null 2>&1 &&
+        apk_command info -e luci-app-overlay-restore >/dev/null 2>&1
+}
+
+trim_log() {
+    [ -f "$logfile" ] || return 0
+    logsize=$(wc -c < "$logfile")
+    if [ "$logsize" -gt 65536 ]; then
+        tail -c 65536 "$logfile" > "$logfile.tmp.$$" &&
+            mv "$logfile.tmp.$$" "$logfile"
+    fi
+}
+
+log() {
+    printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$logfile"
+    trim_log
+    logger -t overlay-restore-bootstrap "$*" 2>/dev/null || true
+}
+
+setup() {
+    [ -s "$bootstrap_dir/init" ] && [ -s "$bootstrap_dir/myfeed.pem" ] || return 1
+    mkdir -p "$bootstrap_root/etc/init.d" || return 1
+    cp "$bootstrap_dir/init" "$bootstrap_root/etc/init.d/overlay-restore-bootstrap" || return 1
+    chmod 0755 "$bootstrap_root/etc/init.d/overlay-restore-bootstrap" || return 1
+    if [ -n "$bootstrap_root" ]; then
+        mkdir -p "$bootstrap_root/etc/rc.d" &&
+            ln -sf ../init.d/overlay-restore-bootstrap "$bootstrap_root/etc/rc.d/S99overlay-restore-bootstrap"
+    else
+        /etc/init.d/overlay-restore-bootstrap enable
+    fi
+}
+
+prepare_repository() {
+    repository=$(config myfeed_repo)
+    [ -n "$repository" ] || repository=$default_repo
+    if [ -f "$repofile" ] && [ ! -L "$repofile" ]; then
+        existing=$(awk '$1 ~ /^https:\/\// {print $1; exit}
+            $1 == "@myfeed" && $2 ~ /^https:\/\// {print $2; exit}' "$repofile")
+        [ -z "$existing" ] || repository=$existing
+    fi
+    case "$repository" in https://*) ;; *) log 'Refusing a non-HTTPS myfeed repository.'; return 1 ;; esac
+    case "$repository" in *[[:space:]]*) log 'Invalid myfeed repository address.'; return 1 ;; esac
+    [ ! -L "$repofile" ] || { log 'Refusing a symlinked repository file.'; return 1; }
+    [ -s "$bootstrap_dir/myfeed.pem" ] || { log 'The retained signing key is missing.'; return 1; }
+    mkdir -p "$bootstrap_root/etc/apk/keys" "$bootstrap_root/etc/apk/repositories.d" || return 1
+    cp "$bootstrap_dir/myfeed.pem" "$bootstrap_root/etc/apk/keys/overlay-restore-bootstrap.pem" || return 1
+    chmod 0644 "$bootstrap_root/etc/apk/keys/overlay-restore-bootstrap.pem" || return 1
+    if [ -f "$repofile" ] && [ ! -e "$bootstrap_dir/repositories.before" ]; then
+        cp "$repofile" "$bootstrap_dir/repositories.before" || return 1
+    fi
+    # Both the untagged and tagged entries are needed by existing APK worlds.
+    touch "$repofile" || return 1
+    if ! awk -v repo="$repository" '$1 == repo {found=1} END {exit !found}' "$repofile"; then
+        printf '\n%s\n' "$repository" >> "$repofile" || return 1
+    fi
+    if ! awk -v repo="$repository" '$1 == "@myfeed" && $2 == repo {found=1} END {exit !found}' "$repofile"; then
+        printf '@myfeed %s\n' "$repository" >> "$repofile" || return 1
+    fi
+}
+
+package_operation() {
+    if [ "$repair" = 1 ]; then
+        apk_command fix --reinstall --upgrade "$@" overlay-restore luci-app-overlay-restore
+    else
+        apk_command add "$@" 'overlay-restore@myfeed>=0.2.0-r11' 'luci-app-overlay-restore@myfeed>=0.2.0-r17'
+    fi
+}
+
+safe_plan() {
+    while IFS= read -r line; do
+        case "$line" in
+            \([0-9]*/[0-9]*\)\ *)
+                case "$line" in
+                    *') Installing '*) ;;
+                    *') Upgrading overlay-restore ('*|*') Upgrading luci-app-overlay-restore ('*|*') Reinstalling overlay-restore ('*|*') Reinstalling luci-app-overlay-restore ('*) ;;
+                    *) log "Refusing an unrelated package change: $line"; return 1 ;;
+                esac
+                ;;
+        esac
+    done < "$lockdir/plan"
+}
+
+run() {
+    enabled || return 0
+    command -v apk >/dev/null 2>&1 || return 1
+    installed && return 0
+    [ ! -L "$bootstrap_dir" ] && [ ! -L "$logfile" ] || return 1
+    mkdir -p "$bootstrap_dir" "$bootstrap_root/tmp" || return 1
+    chmod 0700 "$bootstrap_dir" || return 1
+    mkdir "$lockdir" 2>/dev/null || return 0
+    trap 'rm -f "$lockdir/plan"; rmdir "$lockdir" 2>/dev/null' EXIT
+    trap 'exit 1' HUP INT TERM
+    release=$(sed -n "s/^DISTRIB_RELEASE=['\"]\\{0,1\\}\\([^'\"]*\\).*/\\1/p" "$bootstrap_root/etc/openwrt_release")
+    case "$release" in 25.12|25.12.*) ;; *) log "Unsupported firmware release: $release"; return 1 ;; esac
+    [ "$(apk_command --print-arch)" = x86_64 ] || { log 'Only the x86_64 myfeed is supported.'; return 1; }
+    attempts=$OVERLAY_RESTORE_BOOTSTRAP_ATTEMPTS
+    delay=$OVERLAY_RESTORE_BOOTSTRAP_DELAY
+    [ -n "$attempts" ] || attempts=10
+    [ -n "$delay" ] || delay=30
+    case "$attempts:$delay" in *[!0-9:]*|:*|*:) return 2 ;; esac
+    [ "$attempts" -ge 1 ] && [ "$attempts" -le 30 ] &&
+        [ "$delay" -le 300 ] || return 2
+    log 'Recovery tools are missing; checking the signed myfeed repository.'
+    prepare_repository || return 1
+    repair=0
+    if apk_command info -e overlay-restore >/dev/null 2>&1 &&
+        apk_command info -e luci-app-overlay-restore >/dev/null 2>&1; then
+        repair=1
+    fi
+    attempt=1
+    while [ "$attempt" -le "$attempts" ]; do
+        enabled || { log 'Automatic installation has been disabled.'; return 0; }
+        installed && { log 'Recovery tools are already installed.'; return 0; }
+        log "Installation attempt $attempt of $attempts."
+        # A different configured feed may be temporarily unavailable. The APK
+        # solver still checks signatures and whether our packages are available.
+        apk_command update >> "$logfile" 2>&1
+        trim_log
+        if package_operation --simulate --no-logfile > "$lockdir/plan" 2>&1; then
+            cat "$lockdir/plan" >> "$logfile"
+            trim_log
+            safe_plan || return 1
+            if package_operation >> "$logfile" 2>&1 && installed; then
+                log 'Recovery tools installed. Open System > Backup migration and confirm a recovery plan.'
+                return 0
+            fi
+        else
+            cat "$lockdir/plan" >> "$logfile"
+        fi
+        trim_log
+        log 'Installation is not ready; check connectivity and repository signatures in this log.'
+        attempt=$((attempt + 1))
+        [ "$attempt" -gt "$attempts" ] || sleep "$delay"
+    done
+    log 'Automatic installation stopped. Restart overlay-restore-bootstrap to retry.'
+    return 1
+}
+
+case "$1" in
+    setup) setup ;;
+    run) run ;;
+    status)
+        if ! enabled; then printf 'disabled\n'
+        elif installed; then printf 'installed\n'
+        else printf 'missing\n'; fi
+        ;;
+    *) printf 'Usage: %s {setup|run|status}\n' "$0" >&2; exit 2 ;;
+esac

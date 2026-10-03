@@ -1,0 +1,6 @@
+/etc/config/overlay_restore
+/etc/overlay-restore-bootstrap/
+/etc/init.d/overlay-restore-bootstrap
+/etc/rc.d/S99overlay-restore-bootstrap
+/etc/apk/repositories.d/00-myfeed.list
+/lib/upgrade/keep.d/overlay-restore-bootstrap
