@@ -555,7 +555,10 @@ return view.extend({
             '通过 DiskMan 点击分区条或分区行选择，也可使用下拉框。支持当前 overlay，或需要重新启用为 extroot 的 ext4 / f2fs 分区。执行时会临时挂载未挂载分区，重建系统 upper/work，并按 UUID 启用 extroot；其他目录保留。插入磁盘后刷新页面可重新读取分区。');
         target.devices = data[2];
         target.depends('clean_overlay', '1');
+        // An empty value means the current overlay, not a missing selection.
         target.rmempty = false;
+        target.optional = true;
+        target.default = '';
         target.value('', data[2].current ? '当前 overlay（' + data[2].current.device + '）' : '当前 overlay');
         const selectedDevice = uci.get('overlay_restore', 'main', 'overlay_device');
         if (selectedDevice && data[2].current && selectedDevice == data[2].current.device)
@@ -599,7 +602,7 @@ return view.extend({
             this.historyCleanup = E('button', { 'class': 'btn cbi-button-negative', 'disabled': !L.hasViewPermission() || !data[1].cleanup_count,
                 'click': L.bind(this.confirmCleanup, this, null) }, '清理已结束的任务');
             this.upload = E('button', { 'class': 'btn cbi-button-action', 'disabled': uploadDisabled(task) || null,
-                'click': ui.createHandlerFn(this, 'inspect') }, '上传并检查备份');
+                'click': ui.createHandlerFn(this, 'inspect') }, '上传电脑上的备份并检查');
             this.backupPath = E('input', { 'type': 'text', 'class': 'cbi-input-text', 'aria-label': '路由器备份路径',
                 'placeholder': '/mnt/backup/overlay_backup.tar.gz', 'disabled': uploadDisabled(task) || null,
                 'style': 'width:100%;max-width:640px;box-sizing:border-box' });
@@ -619,7 +622,7 @@ return view.extend({
             poll.add(L.bind(function() { return this.refresh().catch(function() {}); }, this), 3);
             return E('div', {}, [ formNode, E('div', { 'class': 'cbi-section' }, [
                 E('h3', '选择备份'), this.upload,
-                E('p', '通过 QuickFile 选择路由器上的备份，也可直接输入绝对路径。检查后原文件会保留。'),
+                E('p', '电脑上的备份可上传；路由器上的备份用 QuickFile 选择，或填写绝对路径。检查后原文件会保留。'),
                 this.backupPath,
                 E('div', { 'style': 'display:flex;flex-wrap:wrap;gap:8px;margin-top:8px' }, [ this.quickfile, this.inspectLocal ])
             ]), this.status, this.history ]);
