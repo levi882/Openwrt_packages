@@ -73,6 +73,38 @@ installed() {
         apk_command info -e luci-app-overlay-restore >/dev/null 2>&1
 }
 
+firmware_fingerprint() {
+    firmware_file="$bootstrap_root/rom/etc/openwrt_release"
+    [ -s "$firmware_file" ] || firmware_file="$bootstrap_root/etc/openwrt_release"
+    sha256sum "$firmware_file" | awk '{print $1}'
+}
+
+refresh_pending() {
+    [ "$(cat "$bootstrap_dir/firmware.checked" 2>/dev/null)" = "$fingerprint" ] || return 0
+    [ -f "$bootstrap_dir/refresh-pending" ] || return 1
+    [ "$(cat "$bootstrap_dir/refresh-pending")" != "$(cat "$bootstrap_root/proc/sys/kernel/random/boot_id")" ]
+}
+
+recovery_idle() {
+    jobs="$bootstrap_root/etc/overlay-restore/jobs"
+    [ -d "$jobs" ] || return 0
+    states=$(find "$jobs" -mindepth 2 -maxdepth 2 -type f -name state.json) || return 1
+    printf '%s\n' "$states" | while IFS= read -r state; do
+        [ -n "$state" ] || continue
+        task_status=$(jsonfilter -i "$state" -e '@.status') || exit 1
+        case "$task_status" in
+            ready|complete|complete_with_warnings|failed_validation|rolled_back) ;;
+            *) exit 1 ;;
+        esac
+    done
+}
+
+restore_hook() {
+    [ -s "$bootstrap_dir/runner-init" ] || return 0
+    cp "$bootstrap_dir/runner-init" "$bootstrap_root/etc/init.d/overlay-restore-bootstrap" || return 1
+    chmod 0755 "$bootstrap_root/etc/init.d/overlay-restore-bootstrap"
+}
+
 trim_log() {
     [ -f "$logfile" ] || return 0
     logsize=$(wc -c < "$logfile")
@@ -89,10 +121,28 @@ log() {
 }
 
 setup() {
-    [ -s "$bootstrap_dir/init" ] && [ -s "$bootstrap_dir/myfeed.pem" ] || return 1
+    # APK protects retained /etc files. Use the installed package's resources
+    # so an older retained script cannot override a newly installed bootstrap.
+    for resource in run init myfeed.pem; do
+        case "$resource" in
+            run) source="$bootstrap_root/usr/libexec/overlay-restore-bootstrap" ;;
+            *) source="$bootstrap_root/usr/share/overlay-restore-bootstrap/$resource" ;;
+        esac
+        [ ! -s "$source" ] || cp "$source" "$bootstrap_dir/$resource" || return 1
+    done
+    [ -s "$bootstrap_dir/run" ] && [ -s "$bootstrap_dir/init" ] && [ -s "$bootstrap_dir/myfeed.pem" ] || return 1
     mkdir -p "$bootstrap_root/etc/init.d" || return 1
-    cp "$bootstrap_dir/init" "$bootstrap_root/etc/init.d/overlay-restore-bootstrap" || return 1
-    chmod 0755 "$bootstrap_root/etc/init.d/overlay-restore-bootstrap" || return 1
+    # These generated copies survive installing an older tool from local cache.
+    cp "$bootstrap_dir/run" "$bootstrap_dir/runner.tmp.$$" &&
+        chmod 0700 "$bootstrap_dir/runner.tmp.$$" &&
+        mv "$bootstrap_dir/runner.tmp.$$" "$bootstrap_dir/runner" || return 1
+    cp "$bootstrap_dir/init" "$bootstrap_dir/runner-init.tmp.$$" &&
+        mv "$bootstrap_dir/runner-init.tmp.$$" "$bootstrap_dir/runner-init" || return 1
+    restore_hook || return 1
+    if [ ! -e "$bootstrap_dir/firmware.checked" ]; then
+        fingerprint=$(firmware_fingerprint) || return 1
+        printf '%s\n' "$fingerprint" > "$bootstrap_dir/firmware.checked" || return 1
+    fi
     if [ -n "$bootstrap_root" ]; then
         mkdir -p "$bootstrap_root/etc/rc.d" &&
             ln -sf ../init.d/overlay-restore-bootstrap "$bootstrap_root/etc/rc.d/S99overlay-restore-bootstrap"
@@ -130,7 +180,9 @@ prepare_repository() {
 }
 
 package_operation() {
-    if [ "$repair" = 1 ]; then
+    if [ "$updating" = 1 ]; then
+        apk_command --repositories-file "$lockdir/refresh.list" --cache-max-age 60 add --upgrade "$@" 'overlay-restore@myfeed>=0.2.0-r13' 'luci-app-overlay-restore@myfeed>=0.2.0-r19'
+    elif [ "$repair" = 1 ]; then
         apk_command fix --reinstall --upgrade "$@" overlay-restore luci-app-overlay-restore
     else
         apk_command add "$@" 'overlay-restore@myfeed>=0.2.0-r13' 'luci-app-overlay-restore@myfeed>=0.2.0-r19'
@@ -140,7 +192,7 @@ package_operation() {
 safe_plan() {
     while IFS= read -r line; do
         case "$line" in
-            \([0-9]*/[0-9]*\)\ *)
+            \(*/*\)\ *)
                 case "$line" in
                     *') Installing '*) ;;
                     *') Upgrading overlay-restore ('*|*') Upgrading luci-app-overlay-restore ('*|*') Reinstalling overlay-restore ('*|*') Reinstalling luci-app-overlay-restore ('*) ;;
@@ -151,15 +203,16 @@ safe_plan() {
     done < "$lockdir/plan"
 }
 
-run() {
+run() (
     enabled || return 0
     command -v apk >/dev/null 2>&1 || return 1
-    installed && return 0
+    fingerprint=$(firmware_fingerprint) || return 1
+    installed && ! refresh_pending && return 0
     [ ! -L "$bootstrap_dir" ] && [ ! -L "$logfile" ] || return 1
     mkdir -p "$bootstrap_dir" "$bootstrap_root/tmp" || return 1
     chmod 0700 "$bootstrap_dir" || return 1
     mkdir "$lockdir" 2>/dev/null || return 0
-    trap 'rm -f "$lockdir/plan"; rmdir "$lockdir" 2>/dev/null' EXIT
+    trap 'rm -f "$lockdir/plan" "$lockdir/refresh.list"; rmdir "$lockdir" 2>/dev/null' EXIT
     trap 'exit 1' HUP INT TERM
     release=$(sed -n "s/^DISTRIB_RELEASE=['\"]\\{0,1\\}\\([^'\"]*\\).*/\\1/p" "$bootstrap_root/etc/openwrt_release")
     case "$release" in 25.12|25.12.*) ;; *) log "Unsupported firmware release: $release"; return 1 ;; esac
@@ -171,17 +224,17 @@ run() {
     case "$attempts:$delay" in *[!0-9:]*|:*|*:) return 2 ;; esac
     [ "$attempts" -ge 1 ] && [ "$attempts" -le 30 ] &&
         [ "$delay" -le 300 ] || return 2
-    log 'Recovery tools are missing; checking the signed myfeed repository.'
+    log 'Checking retained recovery tools after a firmware upgrade.'
     prepare_repository || return 1
     repair=0
+    updating=0
     if apk_command info -e overlay-restore >/dev/null 2>&1 &&
         apk_command info -e luci-app-overlay-restore >/dev/null 2>&1; then
         repair=1
     fi
     attempt=1
-    while [ "$attempt" -le "$attempts" ]; do
+    while ! installed && [ "$attempt" -le "$attempts" ]; do
         enabled || { log 'Automatic installation has been disabled.'; return 0; }
-        installed && { log 'Recovery tools are already installed.'; return 0; }
         log "Installation attempt $attempt of $attempts."
         if ! prepare_local; then
             attempt=$((attempt + 1))
@@ -196,9 +249,12 @@ run() {
             cat "$lockdir/plan" >> "$logfile"
             trim_log
             safe_plan || return 1
-            if package_operation >> "$logfile" 2>&1 && installed; then
+            package_operation >> "$logfile" 2>&1
+            operation_result=$?
+            restore_hook || return 1
+            if [ "$operation_result" = 0 ] && installed; then
                 log 'Recovery tools installed. Open System > Backup migration and confirm a recovery plan.'
-                return 0
+                break
             fi
         else
             cat "$lockdir/plan" >> "$logfile"
@@ -208,17 +264,65 @@ run() {
         attempt=$((attempt + 1))
         [ "$attempt" -gt "$attempts" ] || sleep "$delay"
     done
-    log 'Automatic installation stopped. Restart overlay-restore-bootstrap to retry.'
+    if ! installed; then
+        log 'Automatic installation stopped. Restart overlay-restore-bootstrap to retry.'
+        return 1
+    fi
+    refresh_pending || return 0
+    # Local recovery remains offline. Only the tool update reads the online feed.
+    local_cache=
+    local_repositories=
+    updating=1
+    printf '%s\n@myfeed %s\n' "$repository" "$repository" > "$lockdir/refresh.list" || return 1
+    attempt=1
+    while [ "$attempt" -le "$attempts" ]; do
+        enabled || return 0
+        recovery_idle || { log 'Waiting for recovery tasks to finish before updating tools.'; return 1; }
+        log "Online tool update attempt $attempt of $attempts."
+        # Refresh this signed feed separately: stale indices must not count as success.
+        if apk_command --repositories-file "$lockdir/refresh.list" update >> "$logfile" 2>&1 &&
+           package_operation --simulate --no-logfile > "$lockdir/plan" 2>&1; then
+            cat "$lockdir/plan" >> "$logfile"
+            trim_log
+            safe_plan || return 1
+            recovery_idle || { log 'Recovery started; postponing the tool update.'; return 1; }
+            operation_result=0
+            if awk '/^\( *[0-9]+\/[0-9]+\) / {found=1} END {exit !found}' "$lockdir/plan"; then
+                package_operation >> "$logfile" 2>&1
+                operation_result=$?
+                restore_hook || return 1
+            fi
+            if [ "$operation_result" = 0 ] && installed; then
+                printf '%s\n' "$fingerprint" > "$bootstrap_dir/firmware.checked.tmp.$$" &&
+                    mv "$bootstrap_dir/firmware.checked.tmp.$$" "$bootstrap_dir/firmware.checked" || return 1
+                rm -f "$bootstrap_dir/refresh-pending"
+                log 'Recovery tools are current for this firmware. Other installed software is unchanged.'
+                return 0
+            fi
+        fi
+        trim_log
+        attempt=$((attempt + 1))
+        [ "$attempt" -gt "$attempts" ] || sleep "$delay"
+    done
+    log 'Online tool update is pending; installed recovery tools remain available.'
     return 1
+)
+
+watch() {
+    while enabled; do
+        run && return 0
+        sleep 300
+    done
 }
 
 case "$1" in
     setup) setup ;;
     run) run ;;
+    watch) watch ;;
     status)
         if ! enabled; then printf 'disabled\n'
         elif installed; then printf 'installed\n'
         else printf 'missing\n'; fi
         ;;
-    *) printf 'Usage: %s {setup|run|status}\n' "$0" >&2; exit 2 ;;
+    *) printf 'Usage: %s {setup|run|watch|status}\n' "$0" >&2; exit 2 ;;
 esac
