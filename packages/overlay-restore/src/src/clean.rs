@@ -403,23 +403,52 @@ fn bootstrap(jobs: &Jobs, id: &str, upper: &Path, options: &Options) -> Result<(
         0o600,
     )?;
     let key = upper.join("etc/apk/keys/overlay-restore-myfeed.pem");
-    let key_path = key.to_str().context("Invalid key path")?;
-    let (code, output) = jobs.run(
-        &[
-            "uclient-fetch",
-            "-q",
-            "-O",
-            key_path,
-            &options.myfeed_key_url,
-        ],
-        Some(id),
-        120,
-    )?;
-    if code != 0 {
-        bail!("Unable to prepare trusted myfeed key: {output}");
+    if crate::local_feed::trusted_key(jobs, &key).is_err() {
+        if options.uses_local_feed() {
+            bail!("The trusted myfeed key is missing for local clean recovery");
+        }
+        let key_path = key.to_str().context("Invalid key path")?;
+        let (code, output) = jobs.run(
+            &[
+                "uclient-fetch",
+                "-q",
+                "-O",
+                key_path,
+                &options.myfeed_key_url,
+            ],
+            Some(id),
+            120,
+        )?;
+        if code != 0 {
+            bail!("Unable to prepare trusted myfeed key: {output}");
+        }
     }
+    let local_cache = crate::local_feed::task(jobs, id, true)?;
+    if local_cache.is_some() {
+        jobs.log(id, "Preparing the clean environment from the signed local feed without repository network access.")?;
+    }
+    let run_apk = |arguments: &[&str], timeout| -> Result<(i32, String)> {
+        if let Some(cache) = &local_cache {
+            let mut args = vec![
+                "apk".to_owned(),
+                "--no-network".into(),
+                "--cache-dir".into(),
+                cache.cache.to_string_lossy().into_owned(),
+                "--repositories-file".into(),
+                cache.repositories.to_string_lossy().into_owned(),
+            ];
+            args.extend(arguments.iter().skip(1).map(|s| (*s).to_owned()));
+            jobs.run(
+                &args.iter().map(String::as_str).collect::<Vec<_>>(),
+                Some(id),
+                timeout,
+            )
+        } else {
+            jobs.run(arguments, Some(id), timeout)
+        }
+    };
     let target = upper.to_str().context("Invalid bootstrap path")?;
-    let (code, output) = jobs.run(
+    let (code, output) = run_apk(
         &[
             "apk",
             "--root",
@@ -429,7 +458,6 @@ fn bootstrap(jobs: &Jobs, id: &str, upper: &Path, options: &Options) -> Result<(
             "30",
             "update",
         ],
-        Some(id),
         180,
     )?;
     if code != 0 {
@@ -445,8 +473,8 @@ fn bootstrap(jobs: &Jobs, id: &str, upper: &Path, options: &Options) -> Result<(
         "--no-scripts",
         "--no-commit-hooks",
         "add",
-        "overlay-restore@myfeed>=0.2.0-r10",
-        "luci-app-overlay-restore@myfeed>=0.2.0-r14",
+        "overlay-restore@myfeed>=0.2.0-r13",
+        "luci-app-overlay-restore@myfeed>=0.2.0-r19",
     ];
     for (name, argument) in [("smartdns", "smartdns@myfeed"), ("nikki", "nikki@myfeed")] {
         if options
@@ -457,7 +485,7 @@ fn bootstrap(jobs: &Jobs, id: &str, upper: &Path, options: &Options) -> Result<(
             arguments.push(argument);
         }
     }
-    let (code, output) = jobs.run(&arguments, Some(id), 600)?;
+    let (code, output) = run_apk(&arguments, 600)?;
     if code != 0 {
         bail!(
             "Unable to install recovery and DNS/proxy packages into the clean environment: {output}"

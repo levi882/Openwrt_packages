@@ -2,6 +2,7 @@
 """Exercise the retained bootstrap's APK protocol without touching the host."""
 
 import json
+import hashlib
 import os
 from pathlib import Path
 import shutil
@@ -35,7 +36,11 @@ with (root / "calls.jsonl").open("a") as handle:
 if "--print-arch" in args:
     print(os.environ.get("MOCK_ARCH", "x86_64"))
     sys.exit(0)
-while args and args[0] in ("--root", "--wait", "--timeout"):
+offline = "--no-network" in args
+while args and args[0] in ("--root", "--wait", "--timeout", "--cache-dir", "--repositories-file", "--no-network"):
+    if args[0] == "--no-network":
+        args = args[1:]
+        continue
     args = args[2:]
 command = args.pop(0)
 if command == "info":
@@ -51,6 +56,9 @@ if command == "update":
     sys.exit(1 if os.environ.get("MOCK_UPDATE_ERROR") else 0)
 if command not in ("add", "fix"):
     sys.exit(2)
+if os.environ.get("MOCK_LOCAL_ONLY") and not offline:
+    print("ERROR: online transaction forbidden")
+    sys.exit(1)
 assert not any(a in args for a in ("--allow-untrusted", "--force-broken-world", "--force-overwrite"))
 if os.environ.get("MOCK_BAD_SIGNATURE"):
     print("ERROR: UNTRUSTED signature")
@@ -153,8 +161,8 @@ class BootstrapTests(unittest.TestCase):
         self.set_config({"": "restore"})
         self.assertEqual(self.run_bootstrap().returncode, 0)
         self.assertEqual(len(self.transactions()), 1)
-        self.assertIn("overlay-restore@myfeed>=0.2.0-r11", self.transactions()[0])
-        self.assertIn("luci-app-overlay-restore@myfeed>=0.2.0-r17", self.transactions()[0])
+        self.assertIn("overlay-restore@myfeed>=0.2.0-r13", self.transactions()[0])
+        self.assertIn("luci-app-overlay-restore@myfeed>=0.2.0-r19", self.transactions()[0])
         self.assertEqual(self.run_bootstrap("status").stdout.strip(), "installed")
         self.assertEqual(self.run_bootstrap().returncode, 0)
         self.assertEqual(len(self.transactions()), 1)
@@ -165,6 +173,62 @@ class BootstrapTests(unittest.TestCase):
         self.assertEqual(self.run_bootstrap(MOCK_NOT_READY="2").returncode, 0)
         self.assertEqual((self.root / "updates").read_text(), "3")
         self.assertEqual(len(self.transactions()), 1)
+
+    def prepare_local_fixture(self):
+        directory = self.root / "mnt/disk/restore-feed"
+        snapshot = "a" * 32
+        store = directory / "snapshots" / snapshot
+        (store / "cache").mkdir(parents=True)
+        (directory / "current").write_text(snapshot)
+        repo = store / "repositories.list"
+        repo.write_text("https://example.org/packages.adb\n@myfeed https://example.org/packages.adb\n")
+        package = store / "cache/test.apk"
+        package.write_bytes(b"fixture package")
+        (store / "checksums.sha256").write_text(
+            hashlib.sha256(repo.read_bytes()).hexdigest() + "  repositories.list\n" +
+            hashlib.sha256(package.read_bytes()).hexdigest() + "  cache/test.apk\n")
+        self.set_config({"": "restore", "upgrade_bootstrap": "1", "local_feed_dir": "/mnt/disk/restore-feed"})
+        return store
+
+    def test_upgrade_bootstrap_uses_only_the_prepared_local_feed(self):
+        self.prepare_local_fixture()
+        self.assertEqual(self.run_bootstrap(MOCK_LOCAL_ONLY="1").returncode, 0)
+        self.assertEqual(len(self.transactions()), 1)
+        self.assertIn("--no-network", self.transactions()[0])
+        self.assertIn("--repositories-file", self.transactions()[0])
+        repository = self.root / "etc/apk/repositories.d/00-myfeed.list"
+        self.assertIn("https://openwrt-packages.pages.dev/", repository.read_text())
+        self.assertNotIn("/mnt/disk", repository.read_text())
+
+    def test_corrupt_local_feed_never_falls_back_to_online_install(self):
+        store = self.prepare_local_fixture()
+        (store / "cache/test.apk").write_bytes(b"tampered")
+        self.assertEqual(self.run_bootstrap().returncode, 1)
+        self.assertEqual(self.transactions(), [])
+        self.assertIn("local feed is incomplete", (self.directory / "boot.log").read_text())
+
+    def test_online_selection_ignores_a_retained_local_directory(self):
+        self.set_config({"": "restore", "restore_source": "online", "local_feed_dir": "/mnt/missing/restore-feed"})
+        self.assertEqual(self.run_bootstrap().returncode, 0)
+        self.assertEqual(len(self.transactions()), 1)
+        self.assertNotIn("--no-network", self.transactions()[0])
+
+    def test_explicit_local_selection_requires_a_directory(self):
+        self.set_config({"": "restore", "restore_source": "local"})
+        self.assertEqual(self.run_bootstrap().returncode, 1)
+        self.assertEqual(self.transactions(), [])
+
+    def test_explicit_local_selection_keeps_the_bootstrap_offline(self):
+        self.prepare_local_fixture()
+        self.set_config({"": "restore", "restore_source": "local", "local_feed_dir": "/mnt/disk/restore-feed"})
+        self.assertEqual(self.run_bootstrap(MOCK_LOCAL_ONLY="1").returncode, 0)
+        self.assertIn("--no-network", self.transactions()[0])
+
+    def test_missing_local_disk_keeps_the_bootstrap_retryable(self):
+        self.set_config({"": "restore", "local_feed_dir": "/mnt/missing/restore-feed"})
+        self.assertEqual(self.run_bootstrap().returncode, 1)
+        self.assertEqual(self.transactions(), [])
+        self.assertIn("Waiting for the prepared local feed disk", (self.directory / "boot.log").read_text())
 
     def test_invalid_signature_stops_after_bounded_retries(self):
         self.assertEqual(self.run_bootstrap(MOCK_BAD_SIGNATURE="1").returncode, 1)

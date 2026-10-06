@@ -1,4 +1,4 @@
-use crate::archive::{Plan, inspect_backup, lan_address, merge_fstab, safe_name};
+use crate::archive::{Plan, inspect_backup, lan_address, merge_recovery_fstab, safe_name};
 use crate::settings::{Options, from_uci, valid_url};
 use crate::util::{
     Lock, Runner, SystemRunner, atomic_copy, atomic_write, digest_file, disk_free, mkdir, now,
@@ -504,7 +504,9 @@ impl Jobs {
             let mut plan = inspect_backup(&backup, &options, &payload)?;
             plan.sha256 = digest_file(&backup)?;
             let fstab = payload.join("etc/config/fstab");
-            if options.keep_current_extroot && fstab.is_file() {
+            if (options.keep_current_extroot || !options.local_feed_dir.is_empty())
+                && fstab.is_file()
+            {
                 let current = self.root.join("etc/config/fstab");
                 let current = if current.is_file() {
                     fs::read_to_string(current)?
@@ -518,7 +520,12 @@ impl Jobs {
                     .context("Missing fstab entry")?;
                 atomic_write(
                     &fstab,
-                    merge_fstab(&fs::read_to_string(&fstab)?, &current)?,
+                    merge_recovery_fstab(
+                        &fs::read_to_string(&fstab)?,
+                        &current,
+                        options.keep_current_extroot,
+                        &options.local_feed_dir,
+                    )?,
                     entry.mode,
                 )?;
                 entry.size = fstab.metadata()?.len();
@@ -535,6 +542,9 @@ impl Jobs {
             let mut public = serde_json::Map::new();
             for key in [
                 "clean_overlay",
+                "local_feed_dir",
+                "restore_source",
+                "local_feed_sync",
                 "keep_current_extroot",
                 "keep_network",
                 "restore_credentials",
@@ -560,6 +570,8 @@ impl Jobs {
             }
             plan.settings = Value::Object(public);
             plan.myfeed_repo = self.feed_url(&options)?;
+            plan.local_feed_snapshot =
+                crate::local_feed::select(self, &options, &plan.myfeed_repo)?;
             plan.selected_bytes = plan.files.iter().map(|entry| entry.size).sum();
             Ok(plan)
         })();
@@ -866,7 +878,9 @@ impl Jobs {
 
     pub fn worker(&self, once: bool) -> Result<()> {
         let _lock = self.lock("worker", false)?;
+        let mut last_feed_tick = 0;
         loop {
+            crate::local_feed::work(self)?;
             for snapshot in self.states()?.into_iter().rev() {
                 let id = snapshot["id"].as_str().context("Task has no ID")?;
                 let path = self.path(id)?;
@@ -914,6 +928,11 @@ impl Jobs {
                     }
                     _ => (),
                 }
+            }
+            if once || now().abs_diff(last_feed_tick) >= 60 {
+                // Sync failures must not stop the recovery worker.
+                let _ = crate::local_feed::tick(self, now());
+                last_feed_tick = now();
             }
             if once {
                 return Ok(());

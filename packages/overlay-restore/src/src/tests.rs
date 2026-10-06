@@ -71,8 +71,387 @@ fn minimal_options() -> Options {
     options
 }
 
+fn seed_local_feed(fixture: &mut Fixture) -> PathBuf {
+    fixture.options.local_feed_dir = "/mnt/storage/restore-feed".into();
+    fixture.options.restore_source = "local".into();
+    let base = fixture.root.join("mnt/storage/restore-feed");
+    let snapshot = "a".repeat(32);
+    let store = base.join("snapshots").join(&snapshot);
+    write(&store.join("cache/curl-test.apk"), b"fixture package");
+    write(
+        &store.join("repositories.list"),
+        format!(
+            "{}\n@myfeed {}\n",
+            fixture.options.myfeed_repo, fixture.options.myfeed_repo
+        ),
+    );
+    let manifest = json!({"format": 1, "created": 1, "arch": "x86_64", "myfeed": fixture.options.myfeed_repo,
+        "packages": ["curl", "overlay-restore@myfeed>=0.2.0-r13", "luci-app-overlay-restore@myfeed>=0.2.0-r19"],
+        "warnings": [], "files": {"curl-test.apk": util::digest_file(&store.join("cache/curl-test.apk")).unwrap(),
+            "../repositories.list": util::digest_file(&store.join("repositories.list")).unwrap()}});
+    save_json(&store.join("manifest.json"), &manifest).unwrap();
+    write(&base.join("current"), snapshot);
+    store
+}
+
+fn mock_profile(fixture: &Fixture, options: &Options) {
+    let mut text = String::from("overlay_restore.main=restore\n");
+    for (key, value) in serde_json::to_value(options).unwrap().as_object().unwrap() {
+        let value = if let Some(values) = value.as_array() {
+            values
+                .iter()
+                .map(|v| util::quote(v.as_str().unwrap()))
+                .collect::<Vec<_>>()
+                .join(" ")
+        } else if let Some(value) = value.as_str() {
+            util::quote(value)
+        } else {
+            value.to_string()
+        };
+        text.push_str(&format!("overlay_restore.main.{key}={value}\n"));
+    }
+    fixture.runner.0.lock().unwrap().uci_show = Some(text);
+}
+
+#[test]
+fn selecting_online_recovery_keeps_the_cache_directory_without_using_it() {
+    let mut fixture = Fixture::new();
+    seed_local_feed(&mut fixture);
+    fixture.options.restore_source = "online".into();
+    fs::remove_file(fixture.root.join("mnt/storage/restore-feed/current")).unwrap();
+    let id = fixture.applied();
+    let plan: archive::Plan =
+        read_json(&fixture.jobs.path(&id).unwrap().join("plan.json")).unwrap();
+    assert!(plan.local_feed_snapshot.is_empty());
+    fixture.jobs.boot_id = Some("after".into());
+    fixture.jobs.worker(true).unwrap();
+    assert_eq!(fixture.jobs.load(&id).unwrap()["status"], "complete");
+    assert!(
+        !fixture
+            .root
+            .join("etc/overlay-restore-bootstrap/local-feed-sync.json")
+            .exists()
+    );
+    assert!(
+        fixture
+            .runner
+            .0
+            .lock()
+            .unwrap()
+            .commands
+            .iter()
+            .filter(|a| a[0] == "apk")
+            .all(|a| !a.iter().any(|v| v == "--no-network"))
+    );
+}
+
+#[test]
+fn source_selection_preserves_existing_profiles_and_old_frozen_jobs() {
+    let old =
+        "overlay_restore.main=restore\noverlay_restore.main.local_feed_dir='/mnt/disk/feed'\n";
+    assert!(from_uci(old, None).unwrap().uses_local_feed());
+    assert!(
+        !from_uci(
+            &(old.to_owned() + "overlay_restore.main.restore_source='online'\n"),
+            None
+        )
+        .unwrap()
+        .uses_local_feed()
+    );
+    let mut json = serde_json::to_value(Options::defaults()).unwrap();
+    json["local_feed_dir"] = json!("/mnt/disk/feed");
+    json.as_object_mut().unwrap().remove("restore_source");
+    json.as_object_mut().unwrap().remove("local_feed_sync");
+    let frozen: Options = serde_json::from_value(json).unwrap();
+    assert!(frozen.uses_local_feed());
+    assert!(frozen.feed_sync_seconds().is_none());
+    let mut invalid = defaults();
+    invalid["restore_source"] = json!("local");
+    assert!(validate(&invalid).is_err());
+    invalid["local_feed_dir"] = json!("/mnt/disk/feed");
+    invalid["local_feed_sync"] = json!("every-second");
+    assert!(validate(&invalid).is_err());
+}
+
+#[test]
+fn weekly_cache_sync_waits_for_success_and_survives_task_cleanup() {
+    let mut fixture = Fixture::new();
+    seed_local_feed(&mut fixture);
+    mock_profile(&fixture, &fixture.options);
+    let id = fixture.applied();
+    let sync = local_feed::status(&fixture.jobs, &fixture.options).unwrap()["sync"].clone();
+    assert_eq!(sync["status"], "waiting_recovery");
+    local_feed::tick(&fixture.jobs, u64::MAX).unwrap();
+    assert!(
+        !fixture
+            .root
+            .join("etc/overlay-restore-bootstrap/local-feed.json")
+            .exists()
+    );
+    fixture.jobs.boot_id = Some("after".into());
+    fixture.jobs.worker(true).unwrap();
+    assert_eq!(fixture.jobs.load(&id).unwrap()["status"], "complete");
+    let sync = local_feed::status(&fixture.jobs, &fixture.options).unwrap()["sync"].clone();
+    assert_eq!(sync["status"], "enabled");
+    let due = sync["next_sync"].as_u64().unwrap();
+    assert!(due >= util::now() + 7 * 86400 - 5);
+    fixture.jobs.remove(&id, &id).unwrap();
+    local_feed::tick(&fixture.jobs, due - 1).unwrap();
+    assert!(
+        !fixture
+            .root
+            .join("etc/overlay-restore-bootstrap/local-feed.json")
+            .exists()
+    );
+    let before = fixture.runner.0.lock().unwrap().commands.len();
+    local_feed::tick(&fixture.jobs, due).unwrap();
+    local_feed::tick(&fixture.jobs, due).unwrap();
+    let state: serde_json::Value = read_json(
+        &fixture
+            .root
+            .join("etc/overlay-restore-bootstrap/local-feed.json"),
+    )
+    .unwrap();
+    assert_eq!(state["status"], "queued");
+    assert_eq!(state["automatic"], true);
+    assert!(
+        fixture.runner.0.lock().unwrap().commands[before..]
+            .iter()
+            .all(|a| a[0] != "apk")
+    );
+}
+
+#[test]
+fn scheduled_sync_pauses_when_disabled_or_recovery_is_pending() {
+    let mut fixture = Fixture::new();
+    seed_local_feed(&mut fixture);
+    let id = fixture.applied();
+    fixture.jobs.boot_id = Some("after".into());
+    fixture.jobs.worker(true).unwrap();
+    let due = local_feed::status(&fixture.jobs, &fixture.options).unwrap()["sync"]["next_sync"]
+        .as_u64()
+        .unwrap();
+    let mut disabled = fixture.options.clone();
+    disabled.local_feed_sync = "off".into();
+    mock_profile(&fixture, &disabled);
+    local_feed::tick(&fixture.jobs, due).unwrap();
+    assert!(
+        !fixture
+            .root
+            .join("etc/overlay-restore-bootstrap/local-feed.json")
+            .exists()
+    );
+    mock_profile(&fixture, &fixture.options);
+    let mut state = fixture.jobs.load(&id).unwrap();
+    state["status"] = json!("failed_packages");
+    fixture.jobs.save(&mut state).unwrap();
+    local_feed::tick(&fixture.jobs, due).unwrap();
+    assert!(
+        !fixture
+            .root
+            .join("etc/overlay-restore-bootstrap/local-feed.json")
+            .exists()
+    );
+    state["status"] = json!("complete");
+    fixture.jobs.save(&mut state).unwrap();
+    local_feed::tick(&fixture.jobs, due).unwrap();
+    state["status"] = json!("queued");
+    fixture.jobs.save(&mut state).unwrap();
+    local_feed::work(&fixture.jobs).unwrap();
+    assert_eq!(
+        local_feed::status(&fixture.jobs, &fixture.options).unwrap()["status"],
+        "queued"
+    );
+    assert!(
+        !fixture
+            .runner
+            .0
+            .lock()
+            .unwrap()
+            .commands
+            .iter()
+            .any(|a| a.iter().any(|v| v == "cache"))
+    );
+}
+
+#[test]
+fn failed_scheduled_sync_retains_cache_and_retries_after_an_hour() {
+    let mut fixture = Fixture::new();
+    seed_local_feed(&mut fixture);
+    fixture.applied();
+    fixture.jobs.boot_id = Some("after".into());
+    fixture.jobs.worker(true).unwrap();
+    mock_profile(&fixture, &fixture.options);
+    let schedule = fixture
+        .root
+        .join("etc/overlay-restore-bootstrap/local-feed-sync.json");
+    let mut state: serde_json::Value = read_json(&schedule).unwrap();
+    state["armed_at"] = json!(1);
+    save_json(&schedule, &state).unwrap();
+    local_feed::tick(&fixture.jobs, util::now()).unwrap();
+    local_feed::work(&fixture.jobs).unwrap();
+    assert_eq!(
+        local_feed::status(&fixture.jobs, &fixture.options).unwrap()["status"],
+        "failed"
+    );
+    let state: serde_json::Value = read_json(&schedule).unwrap();
+    assert!(state["next_attempt"].as_u64().unwrap() >= util::now() + 3595);
+    assert!(!state["last_error"].as_str().unwrap().is_empty());
+    local_feed::tick(&fixture.jobs, util::now()).unwrap();
+    assert_eq!(
+        local_feed::status(&fixture.jobs, &fixture.options).unwrap()["status"],
+        "failed"
+    );
+    assert_eq!(
+        fs::read_to_string(fixture.root.join("mnt/storage/restore-feed/current")).unwrap(),
+        "a".repeat(32)
+    );
+    assert!(
+        local_feed::select(
+            &fixture.jobs,
+            &fixture.options,
+            &fixture.options.myfeed_repo
+        )
+        .is_ok()
+    );
+}
+
+#[test]
+fn local_recovery_is_offline_and_preserves_the_online_feed_and_frozen_snapshot() {
+    let mut fixture = Fixture::new();
+    let store = seed_local_feed(&mut fixture);
+    let repo = fixture.root.join("etc/apk/repositories.d/00-myfeed.list");
+    let original = format!("# CF\n{}\n", fixture.options.myfeed_repo);
+    write(&repo, &original);
+    let id = fixture.applied();
+    // Updating the current pointer cannot move a previously inspected task.
+    write(
+        &fixture.root.join("mnt/storage/restore-feed/current"),
+        "b".repeat(32),
+    );
+    fixture.jobs.boot_id = Some("after".into());
+    fixture.jobs.worker(true).unwrap();
+    assert_eq!(fixture.jobs.load(&id).unwrap()["status"], "complete");
+    assert_eq!(fs::read_to_string(repo).unwrap(), original);
+    let commands = &fixture.runner.0.lock().unwrap().commands;
+    assert!(commands.iter().any(|args| args.iter().any(|a| a == "add")));
+    for args in commands.iter().filter(|args| args[0] == "apk") {
+        assert!(args.iter().any(|a| a == "--no-network"));
+        assert!(
+            args.iter()
+                .any(|a| a == &store.join("cache").to_string_lossy())
+        );
+        assert!(
+            !args
+                .iter()
+                .any(|a| a == "--allow-untrusted" || a == "--force-broken-world")
+        );
+    }
+}
+
+#[test]
+fn incomplete_or_changed_local_feed_blocks_migration_before_configuration_changes() {
+    let mut fixture = Fixture::new();
+    let store = seed_local_feed(&mut fixture);
+    let id = fixture.ready();
+    write(&store.join("cache/curl-test.apk"), b"tampered");
+    let system = fixture.root.join("etc/config/system");
+    write(&system, b"original");
+    fixture.jobs.apply(&id, &id, None).unwrap();
+    fixture.jobs.worker(true).unwrap();
+    assert_eq!(fixture.jobs.load(&id).unwrap()["status"], "failed_prepare");
+    assert_eq!(fs::read(system).unwrap(), b"original");
+    assert!(
+        fixture
+            .runner
+            .0
+            .lock()
+            .unwrap()
+            .commands
+            .iter()
+            .all(|a| !a.iter().any(|s| s == "add"))
+    );
+}
+
+#[test]
+fn local_feed_selection_requires_cached_packages_and_rejects_directory_aliases() {
+    let mut fixture = Fixture::new();
+    let store = seed_local_feed(&mut fixture);
+    let feed = fixture.options.myfeed_repo.clone();
+    fixture.options.install_packages.push("bash".into());
+    assert!(local_feed::select(&fixture.jobs, &fixture.options, &feed).is_err());
+    fixture.options.install_packages.pop();
+    fs::rename(store.join("cache"), store.join("original-cache")).unwrap();
+    symlink("original-cache", store.join("cache")).unwrap();
+    assert!(local_feed::select(&fixture.jobs, &fixture.options, &feed).is_err());
+    for directory in [
+        "/etc/feed",
+        "/tmp/feed",
+        "/mnt/disk/../feed",
+        "/mnt/disk/upper/feed",
+        "/mnt/disk/$feed",
+        "/mnt/disk/my feed",
+    ] {
+        assert!(
+            local_feed::valid_directory(directory).is_err(),
+            "{directory}"
+        );
+    }
+}
+
+#[test]
+fn failed_local_feed_refresh_retains_the_last_ready_snapshot() {
+    let mut fixture = Fixture::new();
+    seed_local_feed(&mut fixture);
+    write(
+        &fixture
+            .root
+            .join("etc/overlay-restore-bootstrap/myfeed.pem"),
+        b"trusted key",
+    );
+    local_feed::queue(&fixture.jobs, &fixture.options).unwrap();
+    // The mock downloader produces no packages, just like an incomplete cache.
+    local_feed::work(&fixture.jobs).unwrap();
+    assert_eq!(
+        local_feed::status(&fixture.jobs, &fixture.options).unwrap()["status"],
+        "failed"
+    );
+    assert_eq!(
+        fs::read_to_string(fixture.root.join("mnt/storage/restore-feed/current")).unwrap(),
+        "a".repeat(32)
+    );
+    assert_eq!(
+        local_feed::select(
+            &fixture.jobs,
+            &fixture.options,
+            &fixture.options.myfeed_repo
+        )
+        .unwrap(),
+        "a".repeat(32)
+    );
+}
+
+#[test]
+fn restored_fstab_keeps_the_local_feed_disk_and_drops_conflicting_old_mounts() {
+    let current = "config mount 'feed'\n option target '/mnt/disk'\n option uuid 'disk-current'\n option enabled '1'\nconfig mount 'extroot'\n option target '/overlay'\n option uuid 'extroot-current'\n";
+    let old = "config mount 'feed'\n option target '/mnt/old-name'\n option uuid 'disk-old'\nconfig mount 'alias'\n option target '/mnt/alias'\n option uuid 'disk-current'\nconfig mount 'other'\n option target '/mnt/data'\n option uuid 'other-disk'\nconfig mount 'root'\n option target '/overlay'\n option uuid 'extroot-old'\n";
+    let merged =
+        archive::merge_recovery_fstab(old, current, false, "/mnt/disk/restore-feed").unwrap();
+    assert!(
+        merged.contains("/mnt/disk")
+            && merged.contains("other-disk")
+            && merged.contains("extroot-old")
+    );
+    assert!(
+        !merged.contains("disk-old")
+            && !merged.contains("/mnt/alias")
+            && !merged.contains("extroot-current")
+    );
+}
+
 #[derive(Default)]
 struct MockState {
+    uci_show: Option<String>,
     installed: HashSet<String>,
     failed: HashSet<String>,
     dependents: BTreeMap<String, Vec<String>>,
@@ -156,7 +535,13 @@ impl Runner for MockRunner {
         }
         if arguments[0] == "uci" {
             if arguments.get(2).is_some_and(|argument| argument == "show") {
-                return (0, "overlay_restore.main=restore\n".to_owned());
+                return (
+                    0,
+                    state
+                        .uci_show
+                        .clone()
+                        .unwrap_or_else(|| "overlay_restore.main=restore\n".to_owned()),
+                );
             }
             if arguments.get(2).is_some_and(|argument| argument == "get") {
                 return (

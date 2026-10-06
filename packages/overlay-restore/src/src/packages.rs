@@ -161,6 +161,14 @@ pub fn tag_repository(jobs: &Jobs, id: &str, options: &Options) -> Result<()> {
     atomic_write(&repo, lines.join("\n") + "\n", 0o644)?;
     let key = jobs.root.join("etc/apk/keys/myfeed.pem");
     if !key.is_file() {
+        if crate::local_feed::trusted_key(jobs, &key).is_ok() {
+            return Ok(());
+        }
+        if options.uses_local_feed() {
+            bail!(
+                "The trusted myfeed key is missing; local recovery cannot download a replacement"
+            );
+        }
         let downloaded = task.join("myfeed.pem");
         let filename = downloaded.to_str().context("Invalid key download path")?;
         let (code, _) = jobs.run(
@@ -194,15 +202,16 @@ pub fn prepare_network_packages(jobs: &Jobs, id: &str) -> Result<()> {
     let options: Options = read_json(&jobs.path(id)?.join("options.json"))?;
     options.validate()?;
     restore_repository(jobs, id)?;
+    if crate::local_feed::task(jobs, id, true)?.is_some() {
+        jobs.log(id, "Using the prepared local feed for DNS/proxy packages; repository network access is disabled.")?;
+    }
     let mut required = Vec::new();
     for name in ["smartdns", "nikki"] {
         if options
             .myfeed_packages
             .iter()
             .any(|package| package == name)
-            && jobs
-                .run(&["apk", "--wait", "30", "info", "-e", name], Some(id), 40)?
-                .0
+            && crate::local_feed::run(jobs, id, &["apk", "--wait", "30", "info", "-e", name], 40)?.0
                 != 0
         {
             required.push(name);
@@ -213,30 +222,24 @@ pub fn prepare_network_packages(jobs: &Jobs, id: &str) -> Result<()> {
     }
     let result = (|| -> Result<()> {
         tag_repository(jobs, id, &options)?;
-        if jobs
-            .run(&["apk", "--wait", "30", "update"], Some(id), 120)?
-            .0
-            != 0
-        {
+        if crate::local_feed::run(jobs, id, &["apk", "--wait", "30", "update"], 120)?.0 != 0 {
             bail!("Repositories are unavailable for preparing DNS/proxy packages");
         }
         for package in required {
-            if jobs
-                .run(
-                    &["apk", "--wait", "30", "add", &format!("{package}@myfeed")],
-                    Some(id),
-                    180,
+            if crate::local_feed::run(
+                jobs,
+                id,
+                &["apk", "--wait", "30", "add", &format!("{package}@myfeed")],
+                180,
+            )?
+            .0 != 0
+                || crate::local_feed::run(
+                    jobs,
+                    id,
+                    &["apk", "--wait", "30", "info", "-e", package],
+                    40,
                 )?
-                .0
-                != 0
-                || jobs
-                    .run(
-                        &["apk", "--wait", "30", "info", "-e", package],
-                        Some(id),
-                        40,
-                    )?
-                    .0
-                    != 0
+                .0 != 0
             {
                 bail!("Unable to prepare network runtime: {package}");
             }
@@ -261,7 +264,7 @@ fn execute(
     if remaining.is_zero() {
         return Ok((1, "Package operation time budget exhausted".to_owned()));
     }
-    jobs.run(arguments, Some(id), timeout.min(remaining.as_secs().max(1)))
+    crate::local_feed::run(jobs, id, arguments, timeout.min(remaining.as_secs().max(1)))
 }
 
 fn installed(jobs: &Jobs, id: &str, deadline: Instant, package: &str) -> Result<bool> {
@@ -314,6 +317,9 @@ pub fn install_packages(jobs: &Jobs, id: &str) -> Result<()> {
     let (mut failures, mut warnings) = (Vec::new(), Vec::new());
     let result = (|| -> Result<()> {
         restore_repository(jobs, id)?;
+        if crate::local_feed::task(jobs, id, true)?.is_some() {
+            jobs.log(id, "Restoring software from the prepared local feed; repository network access is disabled. Normal installs and updates retain the online feeds.")?;
+        }
         if !options.myfeed_packages.is_empty() || !options.optional_packages.is_empty() {
             tag_repository(jobs, id, &options)?;
         }
@@ -497,5 +503,13 @@ pub fn install_packages(jobs: &Jobs, id: &str) -> Result<()> {
     state["status"] = json!(status);
     state["error"] = json!(failures.join("; "));
     jobs.save(&mut state)?;
+    if failures.is_empty()
+        && let Err(error) = crate::local_feed::arm_after_recovery(jobs, id, &options)
+    {
+        jobs.log(
+            id,
+            &format!("Unable to enable local feed synchronization: {error}"),
+        )?;
+    }
     jobs.log(id, &format!("Post-reboot recovery finished: {status}"))
 }

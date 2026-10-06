@@ -21,6 +21,8 @@ const callRemove = rpc.declare({ object: 'overlay-restore', method: 'remove', pa
 const callRollback = rpc.declare({ object: 'overlay-restore', method: 'rollback', params: [ 'id', 'confirmation' ], expect: { '': {} } });
 const callDiscardOverlay = rpc.declare({ object: 'overlay-restore', method: 'discard_overlay', params: [ 'id', 'confirmation' ], expect: { '': {} } });
 const callCommit = rpc.declare({ object: 'uci', method: 'commit', params: [ 'config' ], expect: { '': {} } });
+const callPrepareLocalFeed = rpc.declare({ object: 'overlay-restore', method: 'prepare_local_feed', expect: { '': {} } });
+const callLocalFeedStatus = rpc.declare({ object: 'overlay-restore', method: 'local_feed_status', expect: { '': {} } });
 
 const labels = {
     validating: '正在检查备份', ready: '等待确认', queued: '等待执行', preparing_packages: '正在准备 DNS / 代理软件', applying: '正在迁移配置',
@@ -390,7 +392,10 @@ return view.extend({
             const plan = task.plan, settings = plan.settings;
             body.push(E('p', '备份 SHA256：' + plan.sha256));
             body.push(E('p', '将迁移 ' + plan.file_count + ' 个文件，已写入 ' + task.completed_count + ' 个。'));
-            body.push(E('p', '自用软件源：' + plan.myfeed_repo));
+            body.push(E('p', plan.local_feed_snapshot ? '恢复使用本地软件源：' + settings.local_feed_dir + '。恢复完成后安装和更新继续使用原在线源。' : '在线恢复软件源：' + plan.myfeed_repo));
+            if (plan.local_feed_snapshot)
+                body.push(E('p', settings.local_feed_sync == 'off' ? '本地缓存只手动更新。' :
+                    '恢复成功后' + (settings.local_feed_sync == 'daily' ? '每天' : '每周') + '从 CF / 官方源同步本地缓存。'));
             body.push(E('p', settings.extroot_uuid ? '将重新启用 ' + settings.overlay_target.device + ' 为 extroot，UUID：' + settings.extroot_uuid :
                 settings.keep_current_extroot ? '保留当前系统的 extroot 挂载配置。' : '使用备份中的完整 fstab。'));
             body.push(E('details', { 'data-section': 'files' }, [
@@ -481,6 +486,23 @@ return view.extend({
         if (this.cleaning)
             return Promise.resolve();
         const revision = ++this.refreshRevision;
+        callLocalFeedStatus().then(checked).then(L.bind(function(result) {
+            if (revision != this.refreshRevision || !this.localFeedStatus)
+                return;
+            const names = { disabled: '未启用本地源', missing: '本地源尚未准备或磁盘未挂载', stale: '软件列表或源地址已改变，请重新准备', queued: '等待下载', downloading: '正在下载软件包和依赖', ready: '本地源已准备好', failed: '本地源准备失败' };
+            const text = (names[result.status] || result.status) + (result.packages ? ' · ' + result.packages + ' 项软件，' + result.cached_files + ' 个缓存文件' : '') +
+                (result.error ? '：' + result.error : '') + (result.warnings && result.warnings.length ? '。' + result.warnings.join('；') : '');
+            if (this.localFeedStatus.textContent != text)
+                dom.content(this.localFeedStatus, text);
+            const sync = result.sync || {};
+            const syncText = sync.status == 'enabled' ?
+                (sync.interval == 'daily' ? '每天' : '每周') + '同步已启用' +
+                    (sync.next_sync ? '，下次：' + new Date(sync.next_sync * 1000).toLocaleString() : '') :
+                sync.status == 'waiting_recovery' ? '本地恢复成功后启动定期同步。' : '定期同步已关闭。';
+            dom.content(this.localFeedSyncStatus, syncText + (sync.last_error ? ' 上次同步失败：' + sync.last_error : ''));
+            this.localFeedBusy = result.status == 'queued' || result.status == 'downloading';
+            this.prepareLocalFeed.disabled = !L.hasViewPermission() || uploadDisabled(this.currentTask) || result.status == 'queued' || result.status == 'downloading';
+        }, this)).catch(function() {});
         return callList().then(checked).then(L.bind(function(result) {
             if (revision != this.refreshRevision)
                 return null;
@@ -508,16 +530,18 @@ return view.extend({
         }, this)).then(L.bind(function(task) {
             if (revision != this.refreshRevision)
                 return;
-            this.upload.disabled = uploadDisabled(task);
+            this.upload.disabled = uploadDisabled(task) || this.localFeedBusy;
             this.inspectLocal.disabled = this.upload.disabled;
             this.backupPath.disabled = this.upload.disabled;
             this.quickfile.disabled = this.upload.disabled;
             if (!task) {
+                this.currentTask = null;
                 dom.content(this.status, []);
                 this.taskSnapshot = null;
                 return;
             }
             this.updateTask(task);
+            this.currentTask = task;
             if ([ 'awaiting_reboot', 'awaiting_clean_boot', 'awaiting_rollback_boot' ].indexOf(task.status) >= 0 &&
                 task.plan.settings.reboot && !task.reboot_failed && !this.reconnecting) {
                 this.reconnecting = true;
@@ -534,7 +558,7 @@ return view.extend({
 
     render: function(data) {
         const map = this.map = new form.Map('overlay_restore', '备份迁移恢复',
-            '上传备份或直接选择路由器上的 overlay / sysupgrade 备份，先检查恢复计划，再迁移配置和自定义文件。软件包会在重启后从当前软件源重新安装。修改恢复选项后请重新检查备份，已有计划使用检查时的设置。');
+            '上传备份或直接选择路由器上的 overlay / sysupgrade 备份，先检查恢复计划，再迁移配置和自定义文件。可提前把软件和依赖下载到外接磁盘，恢复时从本地安装，完成后继续使用原在线软件源。修改恢复选项后请重新检查备份，已有计划使用检查时的设置。');
         map.readonly = !L.hasViewPermission();
         const section = map.section(form.NamedSection, 'main', 'restore');
         section.tab('general', '恢复选项');
@@ -552,7 +576,7 @@ return view.extend({
             option.rmempty = false;
         });
         const bootstrap = section.taboption('general', form.Flag, 'upgrade_bootstrap', '保留配置升级后自动装回恢复工具',
-            '勾选（默认）：固件升级时选择「保留配置」，下次启动后等待网络可用，从已签名的 myfeed 安装缺失的恢复后端和页面。仅适用于 OpenWrt 25.12 x86_64。装回工具后仍需选择备份并确认恢复计划。');
+            '勾选（默认）：固件升级时选择「保留配置」，下次启动后安装缺失的恢复后端和页面。已配置并准备本地源时从外接磁盘安装，否则等待在线 myfeed 可用。仅适用于 OpenWrt 25.12 x86_64。装回工具后仍需选择备份并确认恢复计划。');
         bootstrap.default = '1';
         bootstrap.rmempty = false;
         const target = section.taboption('general', OverlayTarget, 'overlay_device', '恢复目标 overlay',
@@ -582,6 +606,30 @@ return view.extend({
         });
         section.taboption('packages', form.Value, 'myfeed_repo', '默认 myfeed 地址', '系统已有 00-myfeed.list 时优先使用其中的地址。');
         section.taboption('packages', form.Value, 'myfeed_key_url', 'myfeed 公钥地址');
+        const restoreSource = section.taboption('packages', form.ListValue, 'restore_source', '恢复软件来源',
+            '选择本地缓存时，恢复全程从外接磁盘安装软件；选择在线恢复时使用原 CF / 官方源。修改后请重新检查备份。');
+        restoreSource.value('online', 'CF / 在线软件源');
+        restoreSource.value('local', '外接磁盘本地缓存');
+        restoreSource.rmempty = false;
+        restoreSource.cfgvalue = function(sectionId) {
+            const selected = uci.get('overlay_restore', sectionId, 'restore_source');
+            return selected && selected != 'auto' ? selected : uci.get('overlay_restore', sectionId, 'local_feed_dir') ? 'local' : 'online';
+        };
+        const localFeed = section.taboption('packages', DirectoryPath, 'local_feed_dir', '本地软件源目录',
+            '通过 QuickFile 选择外接磁盘上的目录，例如 /mnt/sda1/restore-feed。首次使用先点击「准备 / 更新本地软件源」，等待准备完成。磁盘应在重启后自动挂载到相同路径；软件选择改变后需要重新准备。目录可保留，恢复来源可单独选择。');
+        localFeed.rmempty = false;
+        localFeed.optional = true;
+        localFeed.placeholder = '/mnt/sda1/restore-feed';
+        localFeed.validate = function(sectionId, value) {
+            return restoreSource.formvalue(sectionId) == 'local' && !value ? '请选择外接磁盘上的本地软件源目录。' : true;
+        };
+        const feedSync = section.taboption('packages', form.ListValue, 'local_feed_sync', '恢复后同步本地缓存',
+            '本地恢复成功后按周期从 CF / 官方源更新所选软件及依赖的缓存，关闭页面和重启后继续生效。只更新缓存，不自动升级已安装软件；同步失败保留上一份可用缓存，恢复期间暂停同步。');
+        feedSync.value('weekly', '每周一次');
+        feedSync.value('daily', '每天一次');
+        feedSync.value('off', '只手动同步');
+        feedSync.default = 'weekly';
+        feedSync.rmempty = false;
         section.taboption('services', form.Flag, 'iptv_enable', '恢复 IPTV Refresh').rmempty = false;
         [ [ 'iptv_repo_root', 'IPTV 数据目录' ], [ 'ha_config_root', 'Home Assistant 配置目录' ] ].forEach(function(item) {
             section.taboption('services', DirectoryPath, item[0], item[1], '通过 QuickFile 选择目录，也可直接填写绝对路径。');
@@ -600,6 +648,16 @@ return view.extend({
         return map.render().then(L.bind(function(formNode) {
             const task = (data[1].tasks || [])[0];
             this.status = E('div');
+            this.currentTask = task;
+            this.localFeedStatus = E('p', '正在读取本地软件源状态…');
+            this.localFeedSyncStatus = E('p');
+            this.prepareLocalFeed = E('button', { 'class': 'btn', 'disabled': uploadDisabled(task),
+                'click': ui.createHandlerFn(this, function() {
+                    return this.saveSettings().then(function() { return callPrepareLocalFeed().then(checked); })
+                        .then(L.bind(function() { return this.refresh(); }, this))
+                        .catch(function(error) { ui.addNotification(null, E('p', error.message)); });
+                })
+            }, '准备 / 更新本地软件源');
             this.history = E('div', { 'class': 'cbi-section' });
             this.historyInfo = E('p', { 'class': 'cbi-section-descr' });
             this.historyUsage = E('button', { 'class': 'btn', 'click': ui.createHandlerFn(this, 'showUsage') }, '查看占用');
@@ -625,6 +683,9 @@ return view.extend({
             this.taskId = task ? task.id : null;
             poll.add(L.bind(function() { return this.refresh().catch(function() {}); }, this), 3);
             return E('div', {}, [ formNode, E('div', { 'class': 'cbi-section' }, [
+                E('h3', '本地软件源'), this.localFeedStatus, this.localFeedSyncStatus, this.prepareLocalFeed,
+                E('p', '下载在后台运行，关闭页面不会中断。准备失败保留上一份本地源；旧快照不会自动删除。')
+            ]), E('div', { 'class': 'cbi-section' }, [
                 E('h3', '选择备份'), this.upload,
                 E('p', '电脑上的备份可上传；路由器上的备份用 QuickFile 选择，或填写绝对路径。检查后原文件会保留。'),
                 this.backupPath,

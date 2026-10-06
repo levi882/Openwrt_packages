@@ -26,6 +26,12 @@ pub struct Options {
     pub clean_overlay: bool,
     #[serde(default)]
     pub overlay_device: String,
+    #[serde(default)]
+    pub local_feed_dir: String,
+    #[serde(default = "legacy_restore_source")]
+    pub restore_source: String,
+    #[serde(default = "disabled_feed_sync")]
+    pub local_feed_sync: String,
     pub keep_current_extroot: bool,
     pub keep_network: bool,
     pub restore_credentials: bool,
@@ -55,7 +61,28 @@ pub fn defaults() -> Value {
         .expect("Embedded defaults must be valid JSON")
 }
 
+fn legacy_restore_source() -> String {
+    "auto".into()
+}
+
+fn disabled_feed_sync() -> String {
+    "off".into()
+}
+
 impl Options {
+    pub fn uses_local_feed(&self) -> bool {
+        self.restore_source == "local"
+            || self.restore_source == "auto" && !self.local_feed_dir.is_empty()
+    }
+
+    pub fn feed_sync_seconds(&self) -> Option<u64> {
+        match self.local_feed_sync.as_str() {
+            "daily" => Some(86400),
+            "weekly" => Some(7 * 86400),
+            _ => None,
+        }
+    }
+
     pub fn defaults() -> Self {
         serde_json::from_value(defaults()).expect("Embedded defaults must match Options")
     }
@@ -174,6 +201,16 @@ pub fn validate(input: &Value) -> Result<Options> {
         bail!("Select a block device from the overlay partition list");
     }
     valid_url(&options.myfeed_repo, false)?;
+    crate::local_feed::valid_directory(&options.local_feed_dir)?;
+    if !["online", "local", "auto"].contains(&options.restore_source.as_str()) {
+        bail!("Select online or local software recovery");
+    }
+    if options.uses_local_feed() && options.local_feed_dir.is_empty() {
+        bail!("Local recovery requires a local feed directory");
+    }
+    if !["off", "daily", "weekly"].contains(&options.local_feed_sync.as_str()) {
+        bail!("Select a valid local feed synchronization interval");
+    }
     valid_url(&options.myfeed_key_url, false)?;
     valid_url(&options.iptv_public_url, true)?;
     for path in [&options.iptv_repo_root, &options.ha_config_root] {
@@ -241,6 +278,7 @@ pub fn validate(input: &Value) -> Result<Options> {
 
 pub fn from_uci(text: &str, environment: Option<&BTreeMap<String, String>>) -> Result<Options> {
     let mut settings = defaults();
+    let mut explicit_source = false;
     if !text.trim().is_empty() {
         for key in LIST_KEYS {
             settings[*key] = json!([]);
@@ -256,6 +294,7 @@ pub fn from_uci(text: &str, environment: Option<&BTreeMap<String, String>>) -> R
         if settings.get(key).is_none() {
             continue;
         }
+        explicit_source |= key == "restore_source";
         let parts = words(value)?;
         settings[key] = if LIST_KEYS.contains(&key) {
             json!(parts)
@@ -280,6 +319,9 @@ pub fn from_uci(text: &str, environment: Option<&BTreeMap<String, String>>) -> R
                 "remove_packages",
             ),
             ("RESTORE_MYFEED_REPO", "myfeed_repo"),
+            ("RESTORE_LOCAL_FEED_DIR", "local_feed_dir"),
+            ("RESTORE_SOURCE", "restore_source"),
+            ("RESTORE_LOCAL_FEED_SYNC", "local_feed_sync"),
             ("RESTORE_MYFEED_KEY_URL", "myfeed_key_url"),
             ("RESTORE_IPTV_ENABLE", "iptv_enable"),
             ("RESTORE_IPTV_REPO_ROOT", "iptv_repo_root"),
@@ -292,6 +334,7 @@ pub fn from_uci(text: &str, environment: Option<&BTreeMap<String, String>>) -> R
             ("RESTORE_HA_CONFIG_ROOT", "ha_config_root"),
         ] {
             if let Some(value) = environment.get(variable) {
+                explicit_source |= key == "restore_source";
                 settings[key] = if LIST_KEYS.contains(&key) {
                     json!(words(value)?)
                 } else {
@@ -302,6 +345,14 @@ pub fn from_uci(text: &str, environment: Option<&BTreeMap<String, String>>) -> R
         if let Some(value) = environment.get("RESTORE_KEEP_EXTROOT") {
             settings["keep_current_extroot"] = json!(value != "1");
         }
+    }
+    // Preserve the directory-implies-local behavior of existing profiles.
+    if !explicit_source
+        && settings["local_feed_dir"]
+            .as_str()
+            .is_some_and(|s| !s.is_empty())
+    {
+        settings["restore_source"] = json!("local");
     }
     validate(&settings)
 }
