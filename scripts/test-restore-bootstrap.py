@@ -11,8 +11,9 @@ import tempfile
 import unittest
 
 
-ROOT = Path(__file__).resolve().parents[1]
-SOURCE = ROOT / "packages/overlay-restore/files/etc/overlay-restore-bootstrap"
+ROOT = Path(os.environ.get("OVERLAY_RESTORE_TEST_ROOT", Path(__file__).resolve().parents[1]))
+SOURCE = Path(os.environ.get("OVERLAY_RESTORE_BOOTSTRAP_SOURCE", ROOT / "packages/overlay-restore/files/etc/overlay-restore-bootstrap"))
+HOOK = Path(os.environ.get("OVERLAY_RESTORE_UPGRADE_HOOK", ROOT / "packages/overlay-restore/files/lib/upgrade/zz-overlay-restore.sh"))
 MOCK = r"""#!/usr/bin/env python3
 import json
 import os
@@ -29,7 +30,14 @@ if name == "uci":
         print(values[key])
         sys.exit(0)
     sys.exit(1)
+if name == "jsonfilter":
+    print(json.loads(Path(args[1]).read_text())["status"])
+    sys.exit(0)
 if name in ("logger", "sleep"):
+    if name == "sleep" and args == ["300"] and os.environ.get("MOCK_WATCH_DISABLE"):
+        values = json.loads((root / "config.json").read_text())
+        values["upgrade_bootstrap"] = "0"
+        (root / "config.json").write_text(json.dumps(values))
     sys.exit(0)
 with (root / "calls.jsonl").open("a") as handle:
     handle.write(json.dumps(args) + "\n")
@@ -37,7 +45,7 @@ if "--print-arch" in args:
     print(os.environ.get("MOCK_ARCH", "x86_64"))
     sys.exit(0)
 offline = "--no-network" in args
-while args and args[0] in ("--root", "--wait", "--timeout", "--cache-dir", "--repositories-file", "--no-network"):
+while args and args[0] in ("--root", "--wait", "--timeout", "--cache-dir", "--cache-max-age", "--repositories-file", "--no-network"):
     if args[0] == "--no-network":
         args = args[1:]
         continue
@@ -53,7 +61,8 @@ if command == "update":
         print("x" * 100000)
     print("fetch signed package indices")
     # An unrelated feed failure does not prevent an otherwise valid plan.
-    sys.exit(1 if os.environ.get("MOCK_UPDATE_ERROR") else 0)
+    sys.exit(1 if os.environ.get("MOCK_UPDATE_ERROR") or
+             (not offline and os.environ.get("MOCK_ONLINE_UPDATE_ERROR")) else 0)
 if command not in ("add", "fix"):
     sys.exit(2)
 if os.environ.get("MOCK_LOCAL_ONLY") and not offline:
@@ -70,6 +79,11 @@ if "--simulate" in args:
     plan = os.environ.get("MOCK_PLAN")
     if plan:
         print(plan)
+    elif "--upgrade" in args and os.environ.get("MOCK_CURRENT"):
+        print("OK: recovery tools already current")
+    elif "--upgrade" in args and command == "add":
+        print("(1/2) Upgrading overlay-restore (0.2.0-r13 -> 0.2.0-r14)")
+        print("(2/2) Upgrading luci-app-overlay-restore (0.2.0-r20 -> 0.2.0-r21)")
     elif command == "fix":
         print("(1/2) Reinstalling overlay-restore (0.2.0-r11)")
         print("(2/2) Reinstalling luci-app-overlay-restore (0.2.0-r17)")
@@ -89,6 +103,11 @@ for path in ("usr/sbin/overlay-restore", "usr/libexec/rpcd/overlay-restore",
     file.chmod(0o755)
 for package in ("overlay-restore", "luci-app-overlay-restore"):
     (root / ("installed-" + package)).touch()
+if offline and os.environ.get("MOCK_OLD_BOOTSTRAP"):
+    directory = root / "etc/overlay-restore-bootstrap"
+    (directory / "run").write_text("#!/bin/sh\nexit 0\n")
+    (directory / "init").write_text("#!/bin/sh\n# legacy service\n")
+    (root / "etc/init.d/overlay-restore-bootstrap").write_bytes((directory / "init").read_bytes())
 print("OK: recovery tools installed")
 """
 
@@ -100,11 +119,15 @@ class BootstrapTests(unittest.TestCase):
         self.directory = self.root / "etc/overlay-restore-bootstrap"
         shutil.copytree(SOURCE, self.directory)
         (self.root / "etc/openwrt_release").write_text("DISTRIB_RELEASE='25.12.5'\n")
+        (self.directory / "firmware.checked").write_text(self.fingerprint() + "\n")
+        boot = self.root / "proc/sys/kernel/random/boot_id"
+        boot.parent.mkdir(parents=True)
+        boot.write_text("11111111-1111-4111-8111-111111111111\n")
         (self.root / "etc/config").mkdir()
         self.set_config({"": "restore", "upgrade_bootstrap": "1"})
         self.bin = self.root / "bin"
         self.bin.mkdir()
-        for name in ("apk", "uci", "logger", "sleep"):
+        for name in ("apk", "uci", "jsonfilter", "logger", "sleep"):
             script = self.bin / name
             script.write_text(MOCK)
             script.chmod(0o755)
@@ -118,6 +141,15 @@ class BootstrapTests(unittest.TestCase):
 
     def set_config(self, values):
         (self.root / "config.json").write_text(json.dumps(values))
+
+    def fingerprint(self):
+        file = self.root / "rom/etc/openwrt_release"
+        if not file.exists():
+            file = self.root / "etc/openwrt_release"
+        return hashlib.sha256(file.read_bytes()).hexdigest()
+
+    def firmware_changed(self):
+        (self.directory / "firmware.checked").write_text("0" * 64 + "\n")
 
     def run_bootstrap(self, action="run", **settings):
         result = subprocess.run(["sh", str(self.directory / "run"), action],
@@ -289,6 +321,156 @@ class BootstrapTests(unittest.TestCase):
         self.assertEqual((self.root / "etc/rc.d/S99overlay-restore-bootstrap").resolve(), init)
         self.assertEqual(rc_local.read_text(), "# user startup\nexit 0\n")
         self.assertEqual(self.calls(), [])
+        self.assertEqual((self.directory / "runner").read_bytes(), (SOURCE / "run").read_bytes())
+        self.assertEqual((self.directory / "runner-init").read_bytes(), (SOURCE / "init").read_bytes())
+
+    def test_retained_complete_tools_are_updated_after_upgrade(self):
+        self.install_files()
+        self.firmware_changed()
+        self.assertEqual(self.run_bootstrap().returncode, 0)
+        self.assertEqual(len(self.transactions()), 1)
+        self.assertIn("--upgrade", self.transactions()[0])
+        self.assertIn("--repositories-file", self.transactions()[0])
+        self.assertIn("--cache-max-age", self.transactions()[0])
+        self.assertEqual((self.directory / "firmware.checked").read_text().strip(), self.fingerprint())
+        before = len(self.calls())
+        self.assertEqual(self.run_bootstrap().returncode, 0)
+        self.assertEqual(len(self.transactions()), 1)
+        self.assertFalse(any("update" in c for c in self.calls()[before:]))
+
+    def test_package_setup_replaces_old_protected_bootstrap_resources(self):
+        packaged = self.root / "usr/libexec/overlay-restore-bootstrap"
+        packaged.parent.mkdir(parents=True)
+        packaged.write_bytes((SOURCE / "run").read_bytes())
+        resources = self.root / "usr/share/overlay-restore-bootstrap"
+        resources.mkdir(parents=True)
+        for name in ("init", "myfeed.pem"):
+            (resources / name).write_bytes((SOURCE / name).read_bytes())
+            (self.directory / name).write_text("old protected resource\n")
+        (self.directory / "run").write_text("#!/bin/sh\nexit 1\n")
+        result = subprocess.run(["sh", str(packaged), "setup"], env=self.env,
+                                capture_output=True, text=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for name in ("run", "init", "myfeed.pem"):
+            self.assertEqual((self.directory / name).read_bytes(), (SOURCE / name).read_bytes())
+        self.assertEqual((self.directory / "runner").read_bytes(), packaged.read_bytes())
+        self.assertEqual((self.directory / "firmware.checked").read_text().strip(), self.fingerprint())
+        self.assertEqual(self.calls(), [])
+
+    def test_current_tools_after_upgrade_do_not_reinstall(self):
+        self.install_files()
+        self.firmware_changed()
+        self.assertEqual(self.run_bootstrap(MOCK_CURRENT="1").returncode, 0)
+        self.assertEqual(self.transactions(), [])
+        self.assertEqual((self.directory / "firmware.checked").read_text().strip(), self.fingerprint())
+
+    def test_old_local_cache_installs_before_online_update(self):
+        self.prepare_local_fixture()
+        self.run_bootstrap("setup")
+        self.firmware_changed()
+        self.assertEqual(self.run_bootstrap(MOCK_OLD_BOOTSTRAP="1").returncode, 0)
+        transactions = self.transactions()
+        self.assertEqual(len(transactions), 2)
+        self.assertIn("--no-network", transactions[0])
+        self.assertNotIn("--no-network", transactions[1])
+        self.assertIn("--upgrade", transactions[1])
+        self.assertEqual((self.root / "etc/init.d/overlay-restore-bootstrap").read_bytes(), (SOURCE / "init").read_bytes())
+        self.assertEqual((self.directory / "runner").read_bytes(), (SOURCE / "run").read_bytes())
+
+    def test_offline_update_keeps_cached_tools_and_checkpoint_pending(self):
+        self.prepare_local_fixture()
+        self.run_bootstrap("setup")
+        self.firmware_changed()
+        self.assertEqual(self.run_bootstrap(MOCK_OLD_BOOTSTRAP="1", MOCK_ONLINE_UPDATE_ERROR="1").returncode, 1)
+        self.assertEqual(len(self.transactions()), 1)
+        self.assertTrue((self.root / "installed-overlay-restore").exists())
+        self.assertEqual((self.directory / "firmware.checked").read_text().strip(), "0" * 64)
+        result = subprocess.run(["sh", str(self.directory / "runner"), "run"], env=self.env,
+                                capture_output=True, text=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len(self.transactions()), 2)
+
+    def test_watch_retries_when_network_becomes_ready_and_releases_lock(self):
+        self.install_files()
+        self.firmware_changed()
+        self.assertEqual(self.run_bootstrap("watch", MOCK_NOT_READY="3").returncode, 0)
+        self.assertEqual(len(self.transactions()), 1)
+        self.assertEqual((self.root / "updates").read_text(), "4")
+
+    def test_watch_stops_after_user_disables_automatic_updates(self):
+        self.install_files()
+        self.firmware_changed()
+        self.assertEqual(self.run_bootstrap("watch", MOCK_ONLINE_UPDATE_ERROR="1", MOCK_WATCH_DISABLE="1").returncode, 0)
+        self.assertEqual(self.transactions(), [])
+        self.assertEqual(json.loads((self.root / "config.json").read_text())["upgrade_bootstrap"], "0")
+
+    def test_online_refresh_failure_does_not_accept_a_stale_index(self):
+        self.install_files()
+        self.firmware_changed()
+        self.assertEqual(self.run_bootstrap(MOCK_ONLINE_UPDATE_ERROR="1").returncode, 1)
+        self.assertEqual(self.transactions(), [])
+        self.assertEqual((self.directory / "firmware.checked").read_text().strip(), "0" * 64)
+
+    def test_tool_update_refuses_unrelated_changes_and_downgrades(self):
+        self.install_files()
+        self.firmware_changed()
+        for plan in ("Upgrading libc (1 -> 2)", "Purging luci-app-ota (1)",
+                     "Downgrading overlay-restore (0.2.0-r14 -> 0.2.0-r13)"):
+            with self.subTest(plan=plan):
+                self.assertEqual(self.run_bootstrap(MOCK_PLAN="( 1/10) " + plan).returncode, 1)
+                self.assertEqual(self.transactions(), [])
+                self.assertEqual((self.directory / "firmware.checked").read_text().strip(), "0" * 64)
+
+    def test_active_or_failed_recovery_postpones_tool_updates(self):
+        self.install_files()
+        self.firmware_changed()
+        task = self.root / "etc/overlay-restore/jobs" / ("a" * 32) / "state.json"
+        task.parent.mkdir(parents=True)
+        for status in ("installing", "awaiting_reboot", "failed_packages", "queued_clean"):
+            with self.subTest(status=status):
+                task.write_text(json.dumps({"status": status}))
+                self.assertEqual(self.run_bootstrap().returncode, 1)
+                self.assertEqual(self.transactions(), [])
+                self.assertFalse((self.root / "updates").exists())
+        task.write_text(json.dumps({"status": "complete"}))
+        self.assertEqual(self.run_bootstrap().returncode, 0)
+        self.assertEqual(len(self.transactions()), 1)
+
+    def test_rom_firmware_identity_is_used_over_retained_release_file(self):
+        self.install_files()
+        rom = self.root / "rom/etc/openwrt_release"
+        rom.parent.mkdir(parents=True)
+        rom.write_text("DISTRIB_RELEASE='25.12.6'\nDISTRIB_REVISION='new-image'\n")
+        self.assertEqual(self.run_bootstrap().returncode, 0)
+        self.assertEqual(len(self.transactions()), 1)
+        self.assertEqual((self.directory / "firmware.checked").read_text().strip(), self.fingerprint())
+
+    def run_hook(self, **values):
+        env = dict(self.env, COMMAND="/lib/upgrade/do_stage2", TEST="0", CONF_BACKUP_LIST="0", CONF_BACKUP="", CONF_RESTORE="")
+        env.update(values)
+        return subprocess.run(["sh", "-c", '. "$1"; overlay_restore_mark_tool_refresh', "hook", str(HOOK)],
+                              env=env, capture_output=True, text=True, timeout=15)
+
+    def test_keep_config_upgrade_marks_same_image_refresh_only_after_reboot(self):
+        self.install_files()
+        self.assertEqual(self.run_hook().returncode, 0)
+        self.assertTrue((self.directory / "refresh-pending").exists())
+        self.assertEqual(self.run_bootstrap().returncode, 0)
+        self.assertEqual(self.transactions(), [])
+        (self.root / "proc/sys/kernel/random/boot_id").write_text("22222222-2222-4222-8222-222222222222\n")
+        self.assertEqual(self.run_bootstrap().returncode, 0)
+        self.assertEqual(len(self.transactions()), 1)
+        self.assertFalse((self.directory / "refresh-pending").exists())
+
+    def test_backup_list_test_and_clean_stage_do_not_arm_updates(self):
+        for values in ({"CONF_BACKUP": "/tmp/config.tar.gz"}, {"CONF_BACKUP_LIST": "1"}, {"TEST": "1"},
+                       {"COMMAND": "/usr/sbin/overlay-restore clean-stage /tmp/overlay-restore-stage.json"}):
+            with self.subTest(values=values):
+                self.assertEqual(self.run_hook(**values).returncode, 0)
+                self.assertFalse((self.directory / "refresh-pending").exists())
+        self.set_config({"": "restore", "upgrade_bootstrap": "0"})
+        self.assertEqual(self.run_hook().returncode, 0)
+        self.assertFalse((self.directory / "refresh-pending").exists())
 
 
 if __name__ == "__main__":

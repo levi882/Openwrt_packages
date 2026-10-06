@@ -868,8 +868,8 @@ return view.extend({
             const option = section.taboption('general', form.Flag, item[0], item[1], item[2]);
             option.rmempty = false;
         });
-        const bootstrap = section.taboption('general', form.Flag, 'upgrade_bootstrap', '保留配置升级后自动装回恢复工具',
-            '勾选（默认）：固件升级时选择「保留配置」，下次启动后安装缺失的恢复后端和页面。已配置并准备本地源时从外接磁盘安装，否则等待在线 myfeed 可用。仅适用于 OpenWrt 25.12 x86_64。装回工具后仍需选择备份并确认恢复计划。');
+        const bootstrap = section.taboption('general', form.Flag, 'upgrade_bootstrap', '保留配置升级后自动装回并更新恢复工具',
+            '勾选（默认）：固件升级选择「保留配置」，缺失时先按所选来源装回工具，再从 CF / myfeed 检查并更新恢复后端和页面。网络未就绪时后台重试；不升级其他已安装软件，普通重启跳过已完成的检查。仅适用于 OpenWrt 25.12 x86_64。恢复备份仍需检查并确认计划。');
         bootstrap.default = '1';
         bootstrap.rmempty = false;
         const target = section.taboption('general', OverlayTarget, 'overlay_device', '恢复目标 overlay',
