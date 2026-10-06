@@ -9,4 +9,6 @@ Makefile text eol=lf
 *.rs text eol=lf
 *.toml text eol=lf
 Cargo.lock text eol=lf
+packages/overlay-restore/files/** text eol=lf
+packages/luci-app-overlay-restore/root/usr/libexec/rpcd/* text eol=lf
 

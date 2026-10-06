@@ -1,6 +1,9 @@
 {
     "clean_overlay": false,
     "overlay_device": "",
+    "local_feed_dir": "",
+    "restore_source": "online",
+    "local_feed_sync": "weekly",
     "keep_current_extroot":  true,
     "keep_network":  false,
     "restore_credentials":  true,

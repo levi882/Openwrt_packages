@@ -77,6 +77,8 @@ pub struct Plan {
     pub settings: Value,
     #[serde(default)]
     pub myfeed_repo: String,
+    #[serde(default)]
+    pub local_feed_snapshot: String,
 }
 
 fn pax_attributes(contents: &[u8]) -> Result<BTreeMap<String, String>> {
@@ -575,6 +577,7 @@ pub fn inspect_backup(filename: &Path, options: &Options, staging: &Path) -> Res
         lan_ip: String::new(),
         settings: Value::Null,
         myfeed_repo: String::new(),
+        local_feed_snapshot: String::new(),
     })
 }
 
@@ -608,16 +611,72 @@ fn extroot_section(section: &[String]) -> Result<bool> {
 }
 
 pub fn merge_fstab(backup: &str, current: &str) -> Result<String> {
+    merge_recovery_fstab(backup, current, true, "")
+}
+
+pub fn merge_recovery_fstab(
+    backup: &str,
+    current: &str,
+    keep_extroot: bool,
+    local_feed_dir: &str,
+) -> Result<String> {
+    let protected = |section: &[String]| -> Result<bool> {
+        if keep_extroot && extroot_section(section)? {
+            return Ok(true);
+        }
+        for line in section {
+            let words = words(line)?;
+            if words.len() >= 3
+                && words[0] == "option"
+                && words[1] == "target"
+                && !local_feed_dir.is_empty()
+                && (words[2].starts_with("/mnt/") || words[2].starts_with("/media/"))
+                && Path::new(local_feed_dir).starts_with(&words[2])
+            {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    };
+    let selected = sections(current)?
+        .into_iter()
+        .filter_map(|s| match protected(&s) {
+            Ok(true) => Some(Ok(s)),
+            Ok(false) => None,
+            Err(e) => Some(Err(e)),
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let mut identities = HashSet::new();
+    let identity = |section: &[String]| -> Result<Vec<String>> {
+        let mut keys = Vec::new();
+        for line in section {
+            let words = words(line)?;
+            if words.len() >= 3 && words[0] == "config" && words[1] == "mount" {
+                keys.push(format!("name:{}", words[2]));
+            } else if words.len() >= 3
+                && words[0] == "option"
+                && ["uuid", "device"].contains(&words[1].as_str())
+            {
+                keys.push(format!("{}:{}", words[1], words[2]));
+            }
+        }
+        Ok(keys)
+    };
+    for section in &selected {
+        identities.extend(identity(section)?);
+    }
     let mut result = Vec::new();
     for section in sections(backup)? {
-        if !extroot_section(&section)? {
+        if !protected(&section)?
+            && !identity(&section)?
+                .iter()
+                .any(|key| identities.contains(key))
+        {
             result.push(section.concat().trim_end_matches('\n').to_owned());
         }
     }
-    for section in sections(current)? {
-        if extroot_section(&section)? {
-            result.push(section.concat().trim_end_matches('\n').to_owned());
-        }
+    for section in selected {
+        result.push(section.concat().trim_end_matches('\n').to_owned());
     }
     Ok(result.join("\n") + "\n")
 }

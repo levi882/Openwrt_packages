@@ -25,11 +25,44 @@ enabled() {
 }
 
 apk_command() {
+    if [ -n "$local_cache" ]; then
+        set -- --no-network --cache-dir "$local_cache" --repositories-file "$local_repositories" "$@"
+    fi
     if [ -n "$bootstrap_root" ]; then
         apk --root "$bootstrap_root" --wait 30 --timeout 20 "$@"
     else
         apk --wait 30 --timeout 20 "$@"
     fi
+}
+
+prepare_local() {
+    local_cache=
+    local_repositories=
+    local_directory=$(config local_feed_dir)
+    restore_source=$(config restore_source)
+    case "$restore_source" in
+        online) return 0 ;;
+        local) [ -n "$local_directory" ] || { log 'Local recovery requires a local feed directory.'; return 1; } ;;
+        ''|auto) ;;
+        *) log 'Invalid software recovery source.'; return 1 ;;
+    esac
+    [ -n "$local_directory" ] || return 0
+    case "$local_directory" in /mnt/*|/media/*) ;; *) log 'Invalid local feed directory.'; return 1 ;; esac
+    case "$local_directory" in *[[:space:]]*|*'..'*|*'$'*|*/upper/*|*/work/*) log 'Invalid local feed directory.'; return 1 ;; esac
+    current="$bootstrap_root$local_directory/current"
+    [ -f "$current" ] && [ ! -L "$current" ] || { log 'Waiting for the prepared local feed disk.'; return 1; }
+    snapshot=$(cat "$current")
+    case "$snapshot" in ''|*[!0-9a-f]*) return 1 ;; esac
+    [ "${#snapshot}" = 32 ] || return 1
+    snapshot_directory="$bootstrap_root$local_directory/snapshots/$snapshot"
+    [ -f "$snapshot_directory/repositories.list" ] && [ -f "$snapshot_directory/checksums.sha256" ] || return 1
+    (cd "$snapshot_directory" && sha256sum -c checksums.sha256) >> "$logfile" 2>&1 || {
+        log 'The local feed is incomplete or changed; prepare it again before upgrading.'
+        return 1
+    }
+    local_cache="$local_directory/snapshots/$snapshot/cache"
+    local_repositories="$snapshot_directory/repositories.list"
+    log 'Using the signed local feed; repository network access is disabled.'
 }
 
 installed() {
@@ -100,7 +133,7 @@ package_operation() {
     if [ "$repair" = 1 ]; then
         apk_command fix --reinstall --upgrade "$@" overlay-restore luci-app-overlay-restore
     else
-        apk_command add "$@" 'overlay-restore@myfeed>=0.2.0-r11' 'luci-app-overlay-restore@myfeed>=0.2.0-r17'
+        apk_command add "$@" 'overlay-restore@myfeed>=0.2.0-r13' 'luci-app-overlay-restore@myfeed>=0.2.0-r19'
     fi
 }
 
@@ -150,6 +183,11 @@ run() {
         enabled || { log 'Automatic installation has been disabled.'; return 0; }
         installed && { log 'Recovery tools are already installed.'; return 0; }
         log "Installation attempt $attempt of $attempts."
+        if ! prepare_local; then
+            attempt=$((attempt + 1))
+            [ "$attempt" -gt "$attempts" ] || sleep "$delay"
+            continue
+        fi
         # A different configured feed may be temporarily unavailable. The APK
         # solver still checks signatures and whether our packages are available.
         apk_command update >> "$logfile" 2>&1

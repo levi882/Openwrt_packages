@@ -32,7 +32,9 @@ fn backup_path(jobs: &Jobs, value: &Value) -> Result<PathBuf> {
 pub fn call(jobs: &Jobs, method: &str, arguments: &Value) -> Result<Value> {
     let allowed: &[&str] = match method {
         "prepare" => &["path"],
-        "list" | "usage" | "cleanup" | "devices" => &[],
+        "list" | "usage" | "cleanup" | "devices" | "prepare_local_feed" | "local_feed_status" => {
+            &[]
+        }
         "status" | "retry" => &["id"],
         "apply" | "remove" | "rollback" | "discard_overlay" => &["id", "confirmation"],
         _ => bail!("Unknown recovery method"),
@@ -61,6 +63,14 @@ pub fn call(jobs: &Jobs, method: &str, arguments: &Value) -> Result<Value> {
     }
     if method == "list" {
         return list(jobs);
+    }
+    if method == "prepare_local_feed" {
+        let state = crate::local_feed::queue(jobs, &jobs.read_settings(None)?)?;
+        jobs.start_worker()?;
+        return Ok(state);
+    }
+    if method == "local_feed_status" {
+        return crate::local_feed::status(jobs, &jobs.read_settings(None)?);
     }
     if method == "devices" {
         return crate::extroot::devices(jobs);

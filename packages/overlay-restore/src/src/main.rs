@@ -6,7 +6,7 @@ use std::path::Path;
 
 fn help() {
     println!(
-        "overlay-restore {}\nInspect and migrate OpenWrt backup configuration\n\nCommands:\n  inspect BACKUP\n  apply TASK_ID --confirm TASK_ID [--no-reboot]\n  status TASK_ID\n  retry TASK_ID\n  list\n  devices\n  usage\n  cleanup\n  remove TASK_ID --confirm TASK_ID\n  rollback TASK_ID --confirm TASK_ID\n  discard-overlay TASK_ID --confirm TASK_ID\n  worker [--once]\n  rpc METHOD\n  --version",
+        "overlay-restore {}\nInspect and migrate OpenWrt backup configuration\n\nCommands:\n  inspect BACKUP\n  apply TASK_ID --confirm TASK_ID [--no-reboot]\n  status TASK_ID\n  retry TASK_ID\n  list\n  devices\n  prepare-local-feed\n  local-feed-status\n  usage\n  cleanup\n  remove TASK_ID --confirm TASK_ID\n  rollback TASK_ID --confirm TASK_ID\n  discard-overlay TASK_ID --confirm TASK_ID\n  worker [--once]\n  rpc METHOD\n  --version",
         env!("CARGO_PKG_VERSION")
     );
 }
@@ -80,6 +80,16 @@ fn main_inner() -> Result<i32> {
             state
         }
         "status" if arguments.len() == 2 => jobs.public(&arguments[1], true)?,
+        "prepare-local-feed" if arguments.len() == 1 => {
+            let environment = std::env::vars().collect();
+            let options = jobs.read_settings(Some(&environment))?;
+            let state = overlay_restore::local_feed::queue(&jobs, &options)?;
+            jobs.start_worker()?;
+            state
+        }
+        "local-feed-status" if arguments.len() == 1 => {
+            overlay_restore::local_feed::status(&jobs, &jobs.read_settings(None)?)?
+        }
         "retry" if arguments.len() == 2 => {
             let state = jobs.retry(&arguments[1])?;
             jobs.start_worker()?;
