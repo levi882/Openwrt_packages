@@ -91,7 +91,5 @@ keys, LuCI runtime, and recovery tools are preserved. Selected packages are
 installed after reboot by a persistent `procd` worker, with a retry action for
 failed package/service work.
 
-See [the recovery and WSL development guide](docs/overlay-restore.md) for exact
-restore boundaries, settings, task recovery, local APK builds, and QEMU/browser
-verification. Local development APKs have not been published by merely building
+Local development APKs have not been published by merely building
 them; publishing still follows the normal feed workflow.

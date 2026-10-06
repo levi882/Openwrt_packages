@@ -59,6 +59,141 @@ function formatSize(bytes) {
     return value.toFixed(unit ? 1 : 0) + ' ' + units[unit];
 }
 
+function packageGroup(item) {
+    if (item.status == 'installed' || item.status == 'removed')
+        return 'success';
+    if (item.status == 'failed')
+        return item.required === false ? 'warning' : 'failed';
+    return 'pending';
+}
+
+function packageResultLabel(item) {
+    return { installed: '已安装', removed: '已移除', failed: item.required === false ? '可选软件未安装' : '失败' }[item.status] || '等待结果';
+}
+
+const resultStyles = `
+.overlay-restore-results .restore-heading { display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px }
+.overlay-restore-results .restore-task-id { opacity:.7;font-size:.9em }
+.overlay-restore-results .restore-metrics { display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin:16px 0 }
+.overlay-restore-results .restore-metric { padding:12px 16px;border:1px solid rgba(127,127,127,.22);border-radius:8px;background:rgba(127,127,127,.06) }
+.overlay-restore-results .restore-metric-label { display:block;opacity:.75;font-size:.9em }
+.overlay-restore-results .restore-metric-value { display:block;margin-top:6px;font-size:1.5em;font-weight:600 }
+.overlay-restore-results .restore-metric-attention { border-color:#cf8650 }
+.overlay-restore-results .restore-detail { margin:12px 0;padding:0 12px;border:1px solid rgba(127,127,127,.22);border-radius:8px }
+.overlay-restore-results .restore-detail > summary { padding:12px 0;cursor:pointer }
+.overlay-restore-results .restore-detail code { overflow-wrap:anywhere }
+.overlay-restore-results .restore-package-controls { display:flex;flex-wrap:wrap;gap:10px;margin:0 0 12px }
+.overlay-restore-results .restore-package-controls input { flex:1 1 220px;min-width:0 }
+.overlay-restore-results .restore-package-controls select { flex:0 1 180px;max-width:100% }
+.overlay-restore-results .restore-package-scroll { max-height:360px;overflow:auto;margin-bottom:12px }
+.overlay-restore-results .restore-package-scroll table { margin:0;min-width:440px }
+.overlay-restore-results .restore-package-scroll td { overflow-wrap:anywhere }
+.overlay-restore-results .restore-package-failed { color:#e66d59;font-weight:600 }
+.overlay-restore-results .restore-package-warning { color:#cf8650 }
+.overlay-restore-results .restore-package-note { margin:0 0 12px;opacity:.75;font-size:.9em }
+.overlay-restore-results .restore-actions { display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 }
+`;
+
+const packageStyles = `
+.restore-packages { min-width:0 }
+.restore-packages .restore-config-card { margin:14px 0;padding:18px;border:1px solid rgba(127,127,127,.22);border-radius:10px;background:rgba(127,127,127,.04);min-width:0 }
+.restore-packages .restore-card-heading { display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px }
+.restore-packages .restore-card-heading h3 { margin:0;font-size:1.1em }
+.restore-packages .restore-card-note { margin:0 0 14px;opacity:.75;font-size:.9em }
+.restore-packages .cbi-value { display:block;width:auto;padding:8px 0 }
+.restore-packages .cbi-value::after { content:"";display:block;clear:both }
+.restore-packages label.cbi-value-title { display:block;width:145px;float:left }
+.restore-packages .cbi-value-field { display:block;width:auto;margin-left:160px;min-width:0 }
+.restore-packages .cbi-value-description { margin-top:7px;line-height:1.6 }
+.restore-packages .restore-list-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px }
+.restore-packages .restore-list-grid > .cbi-value { padding:16px;margin:0;border:1px solid rgba(127,127,127,.22);border-radius:8px;min-width:0;box-sizing:border-box }
+.restore-packages .restore-list-grid .cbi-value-title { float:none;width:auto;display:block;text-align:left;margin-bottom:10px;font-weight:600 }
+.restore-packages .restore-list-grid .cbi-value-field { margin-left:0 }
+.restore-packages .restore-list-summary { opacity:.75;font-size:.9em;margin:0 0 10px }
+.restore-packages .restore-family-tags { display:flex;flex-wrap:wrap;gap:7px;margin-bottom:12px }
+.restore-packages .restore-family-tag { padding:5px 9px;border:1px solid rgba(127,127,127,.22);border-radius:6px;font-size:.9em;max-width:100%;overflow-wrap:anywhere }
+.restore-packages .restore-family-count { opacity:.65;margin-left:6px;font-size:.85em }
+.restore-packages .restore-list-editor > summary,.restore-packages .restore-source-advanced > summary { cursor:pointer;padding:8px 0 }
+.restore-packages .restore-list-editor-body { max-height:280px;overflow:auto;padding:8px 2px }
+.restore-packages .restore-list-editor-body .cbi-dynlist { width:100%;min-width:0 }
+.restore-packages .restore-list-editor-body .item { max-width:100%;overflow-wrap:anywhere }
+.restore-packages .restore-cache-metrics { display:flex;flex-wrap:wrap;gap:20px;padding:12px 0;margin-bottom:6px;border-top:1px solid rgba(127,127,127,.18);border-bottom:1px solid rgba(127,127,127,.18) }
+.restore-packages .restore-cache-metric strong { display:block;font-size:1.1em;margin-bottom:4px }
+.restore-packages .restore-cache-metric span { opacity:.7;font-size:.85em }
+.restore-packages .restore-cache-status { padding:4px 10px;border:1px solid rgba(127,127,127,.25);border-radius:20px;font-size:.9em }
+.restore-packages .restore-cache-status[data-status="ready"] { border-color:#599478 }
+.restore-packages .restore-cache-status[data-status="failed"],.restore-packages .restore-cache-status[data-status="stale"] { border-color:#cf8650 }
+.restore-packages .restore-cache-actions { display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin-top:12px }
+.restore-packages .restore-cache-actions p { margin:0;opacity:.75;font-size:.9em }
+.restore-packages .restore-directory-control { display:flex;align-items:center;flex-wrap:wrap;gap:10px;max-width:740px }
+.restore-packages .restore-directory-control > :first-child { flex:1 1 240px;min-width:0 }
+.restore-packages .restore-directory-control > div { margin-top:0 !important }
+.restore-packages .restore-directory-control input { width:100% }
+.restore-packages input.cbi-input-text { max-width:100%;box-sizing:border-box }
+.restore-packages .restore-source-advanced input { width:100% }
+.restore-packages .restore-cache-errors:empty { display:none }
+@media(max-width:700px) {
+ .restore-packages .restore-config-card { padding:14px }
+ .restore-packages .restore-list-grid { grid-template-columns:1fr }
+ .restore-packages label.cbi-value-title { float:none;width:auto;display:block;text-align:left;margin-bottom:6px }
+ .restore-packages .cbi-value-field { margin-left:0 }
+}
+`;
+
+function packageFamilies(packages) {
+    const labels = { aurora: 'Aurora 主题', argon: 'Argon 主题', nikki: 'Nikki', bandix: 'Bandix', easytier: 'EasyTier',
+        homebox: 'Homebox', lucky: 'Lucky', rtp2httpd: 'RTP2HTTPD', smartdns: 'SmartDNS',
+        'temp-status': '温度状态', 'iptv-refresh': 'IPTV Refresh', omcproxy: '组播代理',
+        'usb-printer': 'USB 打印', p910nd: '打印服务', 'proto-wireguard': 'WireGuard', wireguard: 'WireGuard' };
+    const groups = new Map();
+    packages.forEach(function(name) {
+        let key = name.replace(/^luci-i18n-/, '').replace(/^luci-(app|theme)-/, '');
+        if (name.indexOf('luci-i18n-') == 0)
+            key = key.replace(/-[a-z]{2}(?:-[a-z]{2})?$/, '');
+        if (key == 'aurora-config' || key == 'argon-config')
+            key = key.replace(/-config$/, '');
+        if (key == 'luci-proto-wireguard')
+            key = 'proto-wireguard';
+        if (!groups.has(key))
+            groups.set(key, { title: labels[key] || key, packages: [] });
+        groups.get(key).packages.push(name);
+    });
+    return Array.from(groups.values());
+}
+
+const CompactPackageList = form.DynamicList.extend({
+    renderWidget: function(sectionId, optionIndex, cfgvalue) {
+        return Promise.resolve(this.super('renderWidget', [ sectionId, optionIndex, cfgvalue ])).then(L.bind(function(inputNode) {
+            const summary = E('p', { 'class': 'restore-list-summary' });
+            const tags = E('div', { 'class': 'restore-family-tags' });
+            const editorTitle = E('summary');
+            let expanded = false;
+            const update = L.bind(function(attached) {
+                const value = attached ? this.formvalue(sectionId) : cfgvalue;
+                const packages = Array.isArray(value) ? value : value ? [ value ] : [];
+                const groups = packageFamilies(packages);
+                dom.content(summary, packages.length ? groups.length + ' 组软件 · ' + packages.length + ' 个软件包' : '尚未选择软件');
+                const preview = groups.slice(0, expanded ? groups.length : 6).map(function(group) {
+                    return E('span', { 'class': 'restore-family-tag', 'title': group.packages.join('\n') },
+                        [ group.title, E('span', { 'class': 'restore-family-count' }, group.packages.length + ' 包') ]);
+                });
+                if (groups.length > 6)
+                    preview.push(E('button', { 'type': 'button', 'class': 'btn restore-family-tag', 'click': function() {
+                        expanded = !expanded;
+                        update(true);
+                    } }, expanded ? '收起分类' : '查看全部 ' + groups.length + ' 组'));
+                dom.content(tags, preview);
+                dom.content(editorTitle, '编辑清单（' + packages.length + ' 包）');
+            }, this);
+            update(false);
+            inputNode.addEventListener('cbi-dynlist-change', function() { window.setTimeout(function() { update(true); }, 0); });
+            return E('div', { 'class': 'restore-compact-list', 'data-package-list': this.option }, [ summary, tags,
+                E('details', { 'class': 'restore-list-editor' }, [ editorTitle,
+                    E('div', { 'class': 'restore-list-editor-body' }, inputNode) ]) ]);
+        }, this));
+    }
+});
+
 function openQuickFile(options) {
     if (!options.enabled())
         return Promise.resolve();
@@ -251,7 +386,7 @@ const DirectoryPath = form.Value.extend({
                     });
                 })
             }, '打开 QuickFile 选择目录');
-            return E('div', {}, [ inputNode, E('div', { 'style': 'margin-top:8px' }, quickfile) ]);
+            return E('div', { 'class': 'restore-directory-control' }, [ inputNode, E('div', { 'style': 'margin-top:8px' }, quickfile) ]);
         }, this));
     }
 });
@@ -383,36 +518,113 @@ return view.extend({
         ]);
     },
 
+    renderPackageResults: function(entries, counts) {
+        const rows = entries.map(function(entry) {
+            const item = entry.item;
+            return E('tr', { 'class': 'tr' }, [ E('td', { 'class': 'td' }, entry.name),
+                E('td', { 'class': 'td' }, { install: '安装', remove: '移除' }[item.operation] || item.operation || '—'),
+                E('td', { 'class': 'td restore-package-' + entry.group }, packageResultLabel(item)),
+                E('td', { 'class': 'td' }, item.message || '—') ]);
+        });
+        const search = E('input', { 'type': 'search', 'class': 'cbi-input-text',
+            'data-package-search': '', 'aria-label': '搜索软件处理结果', 'placeholder': '搜索软件包名称或说明…' });
+        const filter = E('select', { 'class': 'cbi-input-select', 'data-package-filter': '', 'aria-label': '筛选软件处理结果' },
+            [ [ 'all', '全部', entries.length ], [ 'attention', '需要处理', counts.attention ],
+              [ 'success', '成功', counts.installed + counts.removed ], [ 'pending', '等待结果', counts.pending ] ].map(function(item) {
+                return E('option', { 'value': item[0] }, item[1] + '（' + item[2] + '）');
+            }));
+        filter.value = counts.attention ? 'attention' : 'all';
+        const note = E('p', { 'class': 'restore-package-note' });
+        const scroll = E('div', { 'class': 'restore-package-scroll', 'data-scroll': '' },
+            E('table', { 'class': 'table' }, [ E('tr', { 'class': 'tr table-titles' },
+                [ '软件包', '操作', '结果', '说明' ].map(function(title) { return E('th', { 'class': 'th' }, title); })) ].concat(rows)));
+        const update = function() {
+            const query = search.value.trim().toLowerCase();
+            let shown = 0;
+            entries.forEach(function(entry, index) {
+                const matchesGroup = filter.value == 'all' || (filter.value == 'attention' ?
+                    entry.group == 'failed' || entry.group == 'warning' : entry.group == filter.value);
+                const matchesQuery = (entry.name + ' ' + (entry.item.message || '')).toLowerCase().indexOf(query) >= 0;
+                rows[index].style.display = matchesGroup && matchesQuery ? '' : 'none';
+                if (matchesGroup && matchesQuery)
+                    shown++;
+            });
+            scroll.style.display = shown ? '' : 'none';
+            dom.content(note, shown ? '显示 ' + shown + ' / ' + entries.length + ' 项。可选软件未安装时会单独标记。' : '没有匹配的软件包。');
+        };
+        search.addEventListener('input', update);
+        filter.addEventListener('change', update);
+        update();
+        const attributes = { 'class': 'restore-detail', 'data-section': 'package-results', 'data-attention-count': counts.attention };
+        if (counts.attention || counts.pending)
+            attributes.open = '';
+        return E('details', attributes, [ E('summary', '软件处理明细 · ' + entries.length + ' 项'),
+            E('div', { 'class': 'restore-package-controls' }, [ search, filter ]), note, scroll ]);
+    },
+
     renderTask: function(task) {
-        const body = [ E('h3', labels[task.status] || task.status), E('p', '任务：' + task.id) ];
+        const entries = Object.keys(task.packages || {}).sort().map(function(name) {
+            const item = task.packages[name];
+            return { name: name, item: item, group: packageGroup(item) };
+        });
+        const counts = { installed: 0, removed: 0, attention: 0, pending: 0 };
+        entries.forEach(function(entry) {
+            if (entry.group == 'success')
+                counts[entry.item.status]++;
+            else if (entry.group == 'pending')
+                counts.pending++;
+            else
+                counts.attention++;
+        });
+        const metric = function(title, value, attention) {
+            return E('div', { 'class': 'restore-metric' + (attention ? ' restore-metric-attention' : '') }, [
+                E('span', { 'class': 'restore-metric-label' }, title), E('span', { 'class': 'restore-metric-value' }, String(value)) ]);
+        };
+        const body = [ E('style', resultStyles), E('div', { 'class': 'restore-heading' }, [
+            E('h3', labels[task.status] || task.status),
+            E('span', { 'class': 'restore-task-id', 'title': task.id }, '任务 ' + task.id.slice(0, 8)) ]) ];
+        const actions = [], information = [ E('p', '任务：' + task.id) ], metrics = [];
+        if (task.plan)
+            metrics.push(metric(task.status == 'ready' ? '待迁移文件' : '已迁移文件',
+                task.status == 'ready' ? task.plan.file_count : (task.completed_count || 0) + ' / ' + task.plan.file_count));
+        if (entries.length) {
+            metrics.push(metric('安装成功', counts.installed), metric('移除成功', counts.removed),
+                metric('需要处理', counts.attention, counts.attention));
+            if (counts.pending)
+                metrics.push(metric('等待结果', counts.pending));
+        }
+        if (metrics.length)
+            body.push(E('div', { 'class': 'restore-metrics' }, metrics));
         if (task.error)
             body.push(E('p', { 'class': 'alert-message danger' }, task.error));
         (task.warnings || []).forEach(function(warning) { body.push(E('p', { 'class': 'alert-message warning' }, warning)); });
         if (task.plan) {
             const plan = task.plan, settings = plan.settings;
-            body.push(E('p', '备份 SHA256：' + plan.sha256));
-            body.push(E('p', '将迁移 ' + plan.file_count + ' 个文件，已写入 ' + task.completed_count + ' 个。'));
-            body.push(E('p', plan.local_feed_snapshot ? '恢复使用本地软件源：' + settings.local_feed_dir + '。恢复完成后安装和更新继续使用原在线源。' : '在线恢复软件源：' + plan.myfeed_repo));
+            information.push(E('p', [ '备份 SHA256：', E('code', plan.sha256) ]));
+            information.push(E('p', plan.local_feed_snapshot ? '恢复使用本地软件源：' + settings.local_feed_dir + '。恢复完成后安装和更新继续使用原在线源。' : '在线恢复软件源：' + plan.myfeed_repo));
             if (plan.local_feed_snapshot)
-                body.push(E('p', settings.local_feed_sync == 'off' ? '本地缓存只手动更新。' :
+                information.push(E('p', settings.local_feed_sync == 'off' ? '本地缓存只手动更新。' :
                     '恢复成功后' + (settings.local_feed_sync == 'daily' ? '每天' : '每周') + '从 CF / 官方源同步本地缓存。'));
-            body.push(E('p', settings.extroot_uuid ? '将重新启用 ' + settings.overlay_target.device + ' 为 extroot，UUID：' + settings.extroot_uuid :
+            information.push(E('p', settings.extroot_uuid ? '将重新启用 ' + settings.overlay_target.device + ' 为 extroot，UUID：' + settings.extroot_uuid :
                 settings.keep_current_extroot ? '保留当前系统的 extroot 挂载配置。' : '使用备份中的完整 fstab。'));
-            body.push(E('details', { 'data-section': 'files' }, [
+            information.push(E('details', { 'data-section': 'files' }, [
                 E('summary', '待恢复文件（最多显示 200 项）'),
                 E('pre', { 'style': 'max-height:260px;overflow:auto' }, plan.files.map(function(file) { return file.path; }).join('\n'))
             ]));
-            body.push(E('details', { 'data-section': 'packages' }, [
+            information.push(E('details', { 'data-section': 'packages' }, [
                 E('summary', '软件安装及移除计划'),
-                E('pre', '当前源安装：\n' + settings.install_packages.join(' ') + '\n\nmyfeed 安装：\n' + settings.myfeed_packages.join(' ') +
-                    '\n\n可选安装：\n' + settings.optional_packages.join(' ') + '\n\n移除：\n' + settings.remove_packages.join(' '))
+                E('pre', { 'style': 'max-height:260px;overflow:auto;white-space:pre-wrap' },
+                    '当前源安装：\n' + settings.install_packages.join('\n') + '\n\nmyfeed 安装：\n' + settings.myfeed_packages.join('\n') +
+                    '\n\n可选安装：\n' + settings.optional_packages.join('\n') + '\n\n移除：\n' + settings.remove_packages.join('\n'))
             ]));
-            body.push(E('details', { 'data-section': 'skipped' }, [ E('summary', '跳过的备份内容'), E('pre', JSON.stringify(plan.skipped, null, 2)) ]));
+            information.push(E('details', { 'data-section': 'skipped' }, [ E('summary', '跳过的备份内容'),
+                E('pre', { 'style': 'max-height:260px;overflow:auto;white-space:pre-wrap' }, JSON.stringify(plan.skipped, null, 2)) ]));
         }
+        body.push(E('details', { 'class': 'restore-detail', 'data-section': 'information' }, [ E('summary', '任务与恢复详情') ].concat(information)));
         if (task.status == 'ready' && L.hasViewPermission())
-            body.push(E('button', { 'class': 'btn cbi-button-action', 'click': L.bind(this.confirm, this, task) }, '确认恢复计划'));
+            actions.push(E('button', { 'class': 'btn cbi-button-action', 'click': L.bind(this.confirm, this, task) }, '确认恢复计划'));
         if ((task.status == 'failed_clean' || task.status == 'failed_prepare' || task.status == 'failed_packages' || task.status == 'complete_with_warnings') && L.hasViewPermission())
-            body.push(E('button', { 'class': 'btn', 'click': ui.createHandlerFn(this, function() {
+            actions.push(E('button', { 'class': 'btn', 'click': ui.createHandlerFn(this, function() {
                 return callRetry(task.id).then(checked).then(L.bind(this.refresh, this)).catch(function(error) {
                     ui.addNotification(null, E('p', error.message));
                 });
@@ -422,27 +634,26 @@ return view.extend({
             if (task.clean_overlay.unavailable)
                 body.push(E('p', { 'class': 'alert-message warning' }, '暂存环境操作受限：' + task.clean_overlay.unavailable));
             if (task.can_rollback_overlay && L.hasViewPermission())
-                body.push(E('button', { 'class': 'btn', 'style': 'margin:4px',
+                actions.push(E('button', { 'class': 'btn',
                     'click': L.bind(this.confirmOverlayAction, this, task, true) }, '回退到清理前环境'));
             if (task.can_discard_overlay && L.hasViewPermission())
-                body.push(E('button', { 'class': 'btn cbi-button-negative', 'style': 'margin:4px',
+                actions.push(E('button', { 'class': 'btn cbi-button-negative',
                     'click': L.bind(this.confirmOverlayAction, this, task, false) }, '删除暂存 overlay'));
         }
         if (task.can_remove && L.hasViewPermission())
-            body.push(E('button', { 'class': 'btn cbi-button-negative', 'style': 'margin:4px',
+            actions.push(E('button', { 'class': 'btn cbi-button-negative',
                 'click': L.bind(this.confirmCleanup, this, task) }, task.status == 'ready' ? '取消并删除任务' : '删除任务'));
-        const rows = Object.keys(task.packages || {}).map(function(name) {
-            const item = task.packages[name];
-            return E('tr', { 'class': 'tr' }, [ E('td', { 'class': 'td' }, name), E('td', { 'class': 'td' }, item.operation),
-                E('td', { 'class': 'td' }, item.status), E('td', { 'class': 'td' }, item.message || '') ]);
-        });
-        if (rows.length)
-            body.push(E('table', { 'class': 'table' }, [ E('tr', { 'class': 'tr table-titles' },
-                [ '软件包', '操作', '结果', '说明' ].map(function(title) { return E('th', { 'class': 'th' }, title); })) ].concat(rows)));
-        body.push(E('details', { 'data-section': 'log', 'open': '' }, [ E('summary', '执行日志'),
+        if (actions.length)
+            body.push(E('div', { 'class': 'restore-actions' }, actions));
+        if (entries.length)
+            body.push(this.renderPackageResults(entries, counts));
+        const logAttributes = { 'class': 'restore-detail', 'data-section': 'log' };
+        if (task.error || task.status.indexOf('failed_') == 0)
+            logAttributes.open = '';
+        body.push(E('details', logAttributes, [ E('summary', '执行日志'),
             E('p', '每个任务日志最多保留 1 MiB 的最新内容，此处显示末尾约 40 KB。删除任务时会一并删除日志。'),
             E('pre', { 'style': 'max-height:320px;overflow:auto;white-space:pre-wrap' }, task.log || '等待执行…') ]));
-        return E('div', { 'class': 'cbi-section', 'data-task-id': task.id }, body);
+        return E('div', { 'class': 'cbi-section overlay-restore-results', 'data-task-id': task.id }, body);
     },
 
     updateTask: function(task) {
@@ -452,30 +663,58 @@ return view.extend({
         const previous = this.status.firstElementChild;
         const sameTask = previous && previous.getAttribute('data-task-id') == task.id;
         const sections = {};
-        let focusedSection = null;
+        let focusedSection = null, focusedControl = null, searchSelection = null;
         if (sameTask) {
             previous.querySelectorAll('details[data-section]').forEach(function(section) {
-                const key = section.getAttribute('data-section'), pre = section.querySelector('pre');
-                sections[key] = { open: section.open, top: pre ? pre.scrollTop : 0, left: pre ? pre.scrollLeft : 0 };
-                if (section.querySelector('summary') == document.activeElement)
+                const key = section.getAttribute('data-section');
+                const scroll = section.querySelector('[data-scroll]') || section.querySelector('pre');
+                const search = section.querySelector('[data-package-search]'), filter = section.querySelector('[data-package-filter]');
+                sections[key] = { open: section.open, top: scroll ? scroll.scrollTop : 0, left: scroll ? scroll.scrollLeft : 0,
+                    search: search ? search.value : '', filter: filter ? filter.value : '',
+                    attention: Number(section.getAttribute('data-attention-count') || 0) };
+                if (search && search == document.activeElement) {
+                    focusedSection = key;
+                    focusedControl = '[data-package-search]';
+                    searchSelection = [ search.selectionStart, search.selectionEnd ];
+                }
+                else if (filter && filter == document.activeElement) {
+                    focusedSection = key;
+                    focusedControl = '[data-package-filter]';
+                }
+                else if (section.querySelector('summary') == document.activeElement)
                     focusedSection = key;
             });
         }
         const panel = this.renderTask(task), scrollX = window.scrollX, scrollY = window.scrollY;
         panel.querySelectorAll('details[data-section]').forEach(function(section) {
             const state = sections[section.getAttribute('data-section')];
-            if (state)
+            if (state) {
                 section.open = state.open;
+                const search = section.querySelector('[data-package-search]'), filter = section.querySelector('[data-package-filter]');
+                if (search)
+                    search.value = state.search;
+                if (filter) {
+                    filter.value = state.filter;
+                    filter.dispatchEvent(new Event('change'));
+                }
+                if (Number(section.getAttribute('data-attention-count') || 0) > state.attention)
+                    section.open = true;
+            }
         });
         dom.content(this.status, panel);
         panel.querySelectorAll('details[data-section]').forEach(function(section) {
-            const key = section.getAttribute('data-section'), state = sections[key], pre = section.querySelector('pre');
-            if (state && pre) {
-                pre.scrollTop = state.top;
-                pre.scrollLeft = state.left;
+            const key = section.getAttribute('data-section'), state = sections[key];
+            const scroll = section.querySelector('[data-scroll]') || section.querySelector('pre');
+            if (state && scroll) {
+                scroll.scrollTop = state.top;
+                scroll.scrollLeft = state.left;
             }
-            if (key == focusedSection)
-                section.querySelector('summary').focus({ preventScroll: true });
+            if (key == focusedSection) {
+                const control = focusedControl ? section.querySelector(focusedControl) : section.querySelector('summary');
+                control.focus({ preventScroll: true });
+                if (focusedControl == '[data-package-search]' && searchSelection)
+                    control.setSelectionRange(searchSelection[0], searchSelection[1]);
+            }
         });
         if (sameTask)
             window.scrollTo(scrollX, scrollY);
@@ -486,14 +725,35 @@ return view.extend({
         if (this.cleaning)
             return Promise.resolve();
         const revision = ++this.refreshRevision;
-        callLocalFeedStatus().then(checked).then(L.bind(function(result) {
+        callLocalFeedStatus().then(function(result) {
+            // Cache preparation failures include a status and must stay visible.
+            return typeof result.status == 'string' ? result : checked(result);
+        }).then(L.bind(function(result) {
             if (revision != this.refreshRevision || !this.localFeedStatus)
                 return;
-            const names = { disabled: '未启用本地源', missing: '本地源尚未准备或磁盘未挂载', stale: '软件列表或源地址已改变，请重新准备', queued: '等待下载', downloading: '正在下载软件包和依赖', ready: '本地源已准备好', failed: '本地源准备失败' };
-            const text = (names[result.status] || result.status) + (result.packages ? ' · ' + result.packages + ' 项软件，' + result.cached_files + ' 个缓存文件' : '') +
-                (result.error ? '：' + result.error : '') + (result.warnings && result.warnings.length ? '。' + result.warnings.join('；') : '');
-            if (this.localFeedStatus.textContent != text)
-                dom.content(this.localFeedStatus, text);
+            const names = { disabled: '未配置', missing: '尚未准备', stale: '需重新准备', queued: '等待下载', downloading: '正在下载', ready: '已就绪', failed: '准备失败' };
+            dom.content(this.localFeedStatus, names[result.status] || result.status);
+            this.localFeedStatus.setAttribute('data-status', result.status);
+            const snapshot = JSON.stringify(result);
+            if (snapshot != this.localFeedSnapshot) {
+                const metrics = [ [ '缓存软件', result.packages ?? '—' ], [ '缓存文件', result.cached_files ?? '—' ],
+                    [ '准备时间', result.created ? new Date(result.created * 1000).toLocaleString() : '—' ] ];
+                dom.content(this.localFeedMetrics, metrics.map(function(item) {
+                    return E('div', { 'class': 'restore-cache-metric' }, [ E('strong', item[1]), E('span', item[0]) ]);
+                }));
+                const notes = [];
+                if (result.status == 'missing')
+                    notes.push('请选择已挂载的外接磁盘目录，然后准备本地源。');
+                if (result.status == 'stale')
+                    notes.push('软件清单或源地址已改变，请重新准备本地源。');
+                if (result.error)
+                    notes.push(result.error);
+                notes.push.apply(notes, result.warnings || []);
+                dom.content(this.localFeedErrors, notes.map(function(note) {
+                    return E('p', { 'class': 'alert-message warning' }, note);
+                }));
+                this.localFeedSnapshot = snapshot;
+            }
             const sync = result.sync || {};
             const syncText = sync.status == 'enabled' ?
                 (sync.interval == 'daily' ? '每天' : '每周') + '同步已启用' +
@@ -502,7 +762,14 @@ return view.extend({
             dom.content(this.localFeedSyncStatus, syncText + (sync.last_error ? ' 上次同步失败：' + sync.last_error : ''));
             this.localFeedBusy = result.status == 'queued' || result.status == 'downloading';
             this.prepareLocalFeed.disabled = !L.hasViewPermission() || uploadDisabled(this.currentTask) || result.status == 'queued' || result.status == 'downloading';
-        }, this)).catch(function() {});
+        }, this)).catch(L.bind(function(error) {
+            if (revision != this.refreshRevision || !this.localFeedStatus)
+                return;
+            dom.content(this.localFeedStatus, '状态读取失败');
+            this.localFeedStatus.setAttribute('data-status', 'failed');
+            dom.content(this.localFeedErrors, E('p', { 'class': 'alert-message warning' }, error.message));
+            this.localFeedSnapshot = null;
+        }, this));
         return callList().then(checked).then(L.bind(function(result) {
             if (revision != this.refreshRevision)
                 return null;
@@ -556,6 +823,32 @@ return view.extend({
         }, this));
     },
 
+    layoutPackages: function(formNode) {
+        const pane = formNode.querySelector('div[data-tab="packages"]');
+        const row = function(name) { return pane.querySelector('[data-field="cbid.overlay_restore.main.' + name + '"]'); };
+        const source = E('section', { 'class': 'restore-config-card', 'data-package-section': 'source' }, [
+            E('div', { 'class': 'restore-card-heading' }, E('h3', '恢复来源')), row('restore_source'),
+            E('details', { 'class': 'restore-source-advanced' }, [ E('summary', '在线源设置'), row('myfeed_repo'), row('myfeed_key_url') ])
+        ]);
+        const cache = E('section', { 'class': 'restore-config-card', 'data-package-section': 'cache' }, [
+            E('div', { 'class': 'restore-card-heading' }, [ E('h3', '本地软件源'), this.localFeedStatus ]),
+            this.localFeedMetrics, row('local_feed_dir'), row('local_feed_sync'), this.localFeedSyncStatus,
+            this.localFeedErrors,
+            E('div', { 'class': 'restore-cache-actions' }, [ this.prepareLocalFeed, E('p', '后台下载，关闭页面可继续。') ]),
+            E('details', { 'class': 'restore-source-advanced' }, [ E('summary', '使用说明'),
+                E('p', '目录需位于 /mnt 或 /media 下已挂载的外接磁盘，且重启后挂载到相同路径。首次使用或修改软件清单后，请准备本地源并等待就绪。'),
+                E('p', '本地恢复成功后按所选周期更新软件及依赖缓存，重启后继续生效。同步失败保留上一份可用缓存，恢复期间暂停同步；旧快照不会自动删除。') ])
+        ]);
+        const lists = E('section', { 'class': 'restore-config-card', 'data-package-section': 'lists' }, [
+            E('div', { 'class': 'restore-card-heading' }, E('h3', '软件清单')),
+            E('p', { 'class': 'restore-card-note' }, '按用途选择清单，同一应用的主程序、LuCI 页面和语言包合并显示。展开编辑可逐个增删软件包。'),
+            E('div', { 'class': 'restore-list-grid' }, [ row('install_packages'), row('myfeed_packages'), row('optional_packages'), row('remove_packages') ])
+        ]);
+        pane.classList.add('restore-packages');
+        dom.content(pane, [ E('style', packageStyles), source, cache, lists ]);
+        return formNode;
+    },
+
     render: function(data) {
         const map = this.map = new form.Map('overlay_restore', '备份迁移恢复',
             '上传备份或直接选择路由器上的 overlay / sysupgrade 备份，先检查恢复计划，再迁移配置和自定义文件。可提前把软件和依赖下载到外接磁盘，恢复时从本地安装，完成后继续使用原在线软件源。修改恢复选项后请重新检查备份，已有计划使用检查时的设置。');
@@ -600,14 +893,16 @@ return view.extend({
             target.value(selectedDevice, selectedDevice + ' · 当前不可用，请重新选择');
         if (data[2].error)
             target.description += ' 分区读取失败：' + data[2].error;
-        [ [ 'install_packages', '从当前源安装' ], [ 'myfeed_packages', '从 myfeed 安装' ], [ 'optional_packages', '从 myfeed 尝试安装' ],
-          [ 'remove_packages', '移除预装 LuCI 软件包' ] ].forEach(function(item) {
-            section.taboption('packages', form.DynamicList, item[0], item[1]);
+        [ [ 'install_packages', '当前源安装', '必需软件，按当前配置的软件源解析。' ],
+          [ 'myfeed_packages', 'CF / myfeed 安装', '必需软件，按自定义 myfeed 源解析。' ],
+          [ 'optional_packages', '可选安装', '尝试从 myfeed 安装，失败时提示警告。' ],
+          [ 'remove_packages', '移除预装 LuCI', '恢复时只移除此清单中的软件包。' ] ].forEach(function(item) {
+            section.taboption('packages', CompactPackageList, item[0], item[1], item[2]);
         });
         section.taboption('packages', form.Value, 'myfeed_repo', '默认 myfeed 地址', '系统已有 00-myfeed.list 时优先使用其中的地址。');
         section.taboption('packages', form.Value, 'myfeed_key_url', 'myfeed 公钥地址');
         const restoreSource = section.taboption('packages', form.ListValue, 'restore_source', '恢复软件来源',
-            '选择本地缓存时，恢复全程从外接磁盘安装软件；选择在线恢复时使用原 CF / 官方源。修改后请重新检查备份。');
+            '本地恢复从外接磁盘安装，完成后继续使用 CF / 官方源。修改后需重新检查备份。');
         restoreSource.value('online', 'CF / 在线软件源');
         restoreSource.value('local', '外接磁盘本地缓存');
         restoreSource.rmempty = false;
@@ -616,7 +911,7 @@ return view.extend({
             return selected && selected != 'auto' ? selected : uci.get('overlay_restore', sectionId, 'local_feed_dir') ? 'local' : 'online';
         };
         const localFeed = section.taboption('packages', DirectoryPath, 'local_feed_dir', '本地软件源目录',
-            '通过 QuickFile 选择外接磁盘上的目录，例如 /mnt/sda1/restore-feed。首次使用先点击「准备 / 更新本地软件源」，等待准备完成。磁盘应在重启后自动挂载到相同路径；软件选择改变后需要重新准备。目录可保留，恢复来源可单独选择。');
+            '选择外接磁盘上的目录，可保留缓存并单独切换恢复来源。');
         localFeed.rmempty = false;
         localFeed.optional = true;
         localFeed.placeholder = '/mnt/sda1/restore-feed';
@@ -624,7 +919,7 @@ return view.extend({
             return restoreSource.formvalue(sectionId) == 'local' && !value ? '请选择外接磁盘上的本地软件源目录。' : true;
         };
         const feedSync = section.taboption('packages', form.ListValue, 'local_feed_sync', '恢复后同步本地缓存',
-            '本地恢复成功后按周期从 CF / 官方源更新所选软件及依赖的缓存，关闭页面和重启后继续生效。只更新缓存，不自动升级已安装软件；同步失败保留上一份可用缓存，恢复期间暂停同步。');
+            '本地恢复成功后启用。只更新缓存，不自动升级已安装软件。');
         feedSync.value('weekly', '每周一次');
         feedSync.value('daily', '每天一次');
         feedSync.value('off', '只手动同步');
@@ -645,19 +940,26 @@ return view.extend({
         [ [ 'max_upload_mb', '备份文件大小上限（MiB）', 'range(1,1024)' ], [ 'max_expanded_mb', '展开大小上限（MiB）', 'range(8,4096)' ] ].forEach(function(item) {
             section.taboption('limits', form.Value, item[0], item[1]).datatype = item[2];
         });
+        const task = (data[1].tasks || [])[0];
+        this.localFeedStatus = E('span', { 'class': 'restore-cache-status' }, '读取状态…');
+        this.localFeedMetrics = E('div', { 'class': 'restore-cache-metrics' });
+        this.localFeedSyncStatus = E('p', { 'class': 'restore-card-note' });
+        this.localFeedErrors = E('div', { 'class': 'restore-cache-errors' });
+        this.prepareLocalFeed = E('button', { 'class': 'btn', 'disabled': uploadDisabled(task),
+            'click': ui.createHandlerFn(this, function() {
+                return this.saveSettings().then(function() { return callPrepareLocalFeed().then(checked); })
+                    .then(L.bind(function() { return this.refresh(); }, this))
+                    .catch(function(error) { ui.addNotification(null, E('p', error.message)); });
+            })
+        }, '准备 / 更新本地软件源');
+        // LuCI saves and resets through renderContents(), so arrange every render.
+        const renderContents = map.renderContents;
+        map.renderContents = L.bind(function() {
+            return renderContents.call(map).then(L.bind(this.layoutPackages, this));
+        }, this);
         return map.render().then(L.bind(function(formNode) {
-            const task = (data[1].tasks || [])[0];
             this.status = E('div');
             this.currentTask = task;
-            this.localFeedStatus = E('p', '正在读取本地软件源状态…');
-            this.localFeedSyncStatus = E('p');
-            this.prepareLocalFeed = E('button', { 'class': 'btn', 'disabled': uploadDisabled(task),
-                'click': ui.createHandlerFn(this, function() {
-                    return this.saveSettings().then(function() { return callPrepareLocalFeed().then(checked); })
-                        .then(L.bind(function() { return this.refresh(); }, this))
-                        .catch(function(error) { ui.addNotification(null, E('p', error.message)); });
-                })
-            }, '准备 / 更新本地软件源');
             this.history = E('div', { 'class': 'cbi-section' });
             this.historyInfo = E('p', { 'class': 'cbi-section-descr' });
             this.historyUsage = E('button', { 'class': 'btn', 'click': ui.createHandlerFn(this, 'showUsage') }, '查看占用');
@@ -683,9 +985,6 @@ return view.extend({
             this.taskId = task ? task.id : null;
             poll.add(L.bind(function() { return this.refresh().catch(function() {}); }, this), 3);
             return E('div', {}, [ formNode, E('div', { 'class': 'cbi-section' }, [
-                E('h3', '本地软件源'), this.localFeedStatus, this.localFeedSyncStatus, this.prepareLocalFeed,
-                E('p', '下载在后台运行，关闭页面不会中断。准备失败保留上一份本地源；旧快照不会自动删除。')
-            ]), E('div', { 'class': 'cbi-section' }, [
                 E('h3', '选择备份'), this.upload,
                 E('p', '电脑上的备份可上传；路由器上的备份用 QuickFile 选择，或填写绝对路径。检查后原文件会保留。'),
                 this.backupPath,

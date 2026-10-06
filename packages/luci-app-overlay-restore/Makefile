@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-overlay-restore
 PKG_VERSION:=0.2.0
-PKG_RELEASE:=19
+PKG_RELEASE:=20
 PKG_LICENSE:=MIT
 PKGARCH:=all
 
