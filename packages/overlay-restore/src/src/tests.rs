@@ -453,6 +453,8 @@ fn restored_fstab_keeps_the_local_feed_disk_and_drops_conflicting_old_mounts() {
 struct MockState {
     uci_show: Option<String>,
     installed: HashSet<String>,
+    versions: BTreeMap<String, String>,
+    available_versions: BTreeMap<String, String>,
     failed: HashSet<String>,
     dependents: BTreeMap<String, Vec<String>>,
     dependencies: BTreeMap<String, Vec<String>>,
@@ -489,10 +491,21 @@ impl Runner for MockRunner {
                 if state.failed.contains(&package) {
                     return (1, "repository download failed".to_owned());
                 }
-                if let Some(dependencies) = state.dependencies.get(&package).cloned() {
-                    state.installed.extend(dependencies);
+                let mut selected = state
+                    .dependencies
+                    .get(&package)
+                    .cloned()
+                    .unwrap_or_default();
+                selected.push(package);
+                for name in selected {
+                    if (!state.installed.contains(&name)
+                        || arguments.iter().any(|argument| argument == "--upgrade"))
+                        && let Some(version) = state.available_versions.get(&name).cloned()
+                    {
+                        state.versions.insert(name.clone(), version);
+                    }
+                    state.installed.insert(name);
                 }
-                state.installed.insert(package);
             } else if let Some(position) = arguments.iter().position(|argument| argument == "del") {
                 let requested: HashSet<_> = arguments[position + 1..].iter().cloned().collect();
                 let mut removable = requested.clone();
@@ -1176,6 +1189,122 @@ fn gnu_long_names_are_supported_within_limits() {
     );
 }
 
+#[test]
+fn gnu_long_unicode_names_override_truncated_header_fields() {
+    let fixture = Fixture::new();
+    // The 100-byte GNU fallback ends partway through a three-byte character.
+    let name = format!("root/{}配置文件", "a".repeat(93));
+    let mut tar = tar::Builder::new(GzEncoder::new(
+        File::create(&fixture.backup).unwrap(),
+        Compression::fast(),
+    ));
+    let mut header = tar::Header::new_gnu();
+    header.set_size(6);
+    header.set_mode(0o644);
+    tar.append_data(&mut header, "etc/config/system", Cursor::new(b"system"))
+        .unwrap();
+    let complete_name = [name.as_bytes(), &[0]].concat();
+    let mut extension = tar::Header::new_gnu();
+    extension.set_size(complete_name.len() as u64);
+    extension.set_mode(0o644);
+    extension.set_entry_type(tar::EntryType::GNULongName);
+    tar.append_data(&mut extension, "././@LongLink", Cursor::new(complete_name))
+        .unwrap();
+    let contents = b"long unicode path";
+    header.set_size(contents.len() as u64);
+    header.as_mut_bytes()[..100].copy_from_slice(&name.as_bytes()[..100]);
+    assert!(std::str::from_utf8(&header.path_bytes()).is_err());
+    header.set_cksum();
+    tar.append(&header, Cursor::new(contents)).unwrap();
+    tar.into_inner().unwrap().finish().unwrap();
+    let plan = inspect_backup(
+        &fixture.backup,
+        &fixture.options,
+        &fixture.root.join("payload"),
+    )
+    .unwrap();
+    assert!(plan.files.iter().any(|entry| entry.path == name));
+    assert_eq!(
+        fs::read(fixture.root.join("payload").join(name)).unwrap(),
+        b"long unicode path"
+    );
+}
+
+#[test]
+fn pax_names_override_invalid_utf8_fallbacks_without_bypassing_validation() {
+    let fixture = Fixture::new();
+    for (path, succeeds) in [
+        (Some("etc/config/配置"), true),
+        (Some("../outside"), false),
+        (None, false),
+    ] {
+        let mut tar = tar::Builder::new(GzEncoder::new(
+            File::create(&fixture.backup).unwrap(),
+            Compression::fast(),
+        ));
+        if let Some(path) = path {
+            let record = pax_record("path", path);
+            let mut header = tar::Header::new_ustar();
+            header.set_size(record.len() as u64);
+            header.set_mode(0o644);
+            header.set_entry_type(tar::EntryType::XHeader);
+            tar.append_data(&mut header, "PaxHeaders/file", Cursor::new(record))
+                .unwrap();
+        }
+        let mut header = tar::Header::new_ustar();
+        header.set_size(6);
+        header.set_mode(0o644);
+        header.as_mut_bytes()[0] = 0xff;
+        header.set_cksum();
+        tar.append(&header, Cursor::new(b"system")).unwrap();
+        if succeeds {
+            let records = [
+                pax_record("path", "root/link"),
+                pax_record("linkpath", "../etc/config/配置"),
+            ]
+            .concat();
+            let mut extension = tar::Header::new_ustar();
+            extension.set_size(records.len() as u64);
+            extension.set_mode(0o644);
+            extension.set_entry_type(tar::EntryType::XHeader);
+            tar.append_data(&mut extension, "PaxHeaders/link", Cursor::new(records))
+                .unwrap();
+            let mut link = tar::Header::new_ustar();
+            link.set_size(0);
+            link.set_mode(0o777);
+            link.set_entry_type(tar::EntryType::Symlink);
+            link.as_mut_bytes()[0] = 0xff;
+            link.as_mut_bytes()[157] = 0xff;
+            link.set_cksum();
+            tar.append(&link, std::io::empty()).unwrap();
+        }
+        tar.into_inner().unwrap().finish().unwrap();
+        let staging = fixture.root.join(if succeeds {
+            "valid-payload"
+        } else {
+            "invalid-payload"
+        });
+        let result = inspect_backup(&fixture.backup, &fixture.options, &staging);
+        if succeeds {
+            let plan = result.unwrap();
+            assert_eq!(plan.files.len(), 1);
+            assert_eq!(plan.files[0].path, "etc/config/配置");
+            assert_eq!(
+                fs::read(staging.join("etc/config/配置")).unwrap(),
+                b"system"
+            );
+        } else {
+            let error = result.unwrap_err().to_string();
+            assert!(error.contains(if path.is_some() {
+                "Parent traversal"
+            } else {
+                "Invalid archive path encoding"
+            }));
+            assert!(!staging.exists());
+        }
+    }
+}
+
 fn pax_backup(filename: &Path, attributes: &[Vec<u8>]) {
     let mut tar = tar::Builder::new(GzEncoder::new(
         File::create(filename).unwrap(),
@@ -1567,6 +1696,78 @@ fn failed_tagged_install_does_not_accept_an_existing_package_as_success() {
             .installed
             .contains("luci-app-homebox")
     );
+}
+
+#[test]
+fn recovery_upgrades_existing_selected_packages_and_their_dependencies() {
+    let mut fixture = Fixture::new();
+    fixture.options.myfeed_packages = ["nikki", "luci-app-nikki"].map(str::to_owned).to_vec();
+    write(
+        &fixture.root.join("etc/apk/keys/myfeed.pem"),
+        "fixture public key",
+    );
+    {
+        let mut state = fixture.runner.0.lock().unwrap();
+        for (name, old, latest) in [
+            ("curl", "old", "new"),
+            ("nikki", "2026.04.08-r1", "2026.04.08-r8"),
+            ("luci-app-nikki", "1.26.1-r1", "1.26.2-r4"),
+            ("mihomo-meta", "1.19.31", "1.19.32"),
+            ("unselected-plugin", "old", "new"),
+        ] {
+            state.installed.insert(name.into());
+            state.versions.insert(name.into(), old.into());
+            state.available_versions.insert(name.into(), latest.into());
+        }
+        state
+            .dependencies
+            .insert("nikki".into(), vec!["mihomo-meta".into()]);
+    }
+    let id = fixture.applied();
+    fixture.jobs.boot_id = Some("after".into());
+    fixture.jobs.worker(true).unwrap();
+    assert_eq!(fixture.jobs.load(&id).unwrap()["status"], "complete");
+    let state = fixture.runner.0.lock().unwrap();
+    for name in ["curl", "nikki", "luci-app-nikki", "mihomo-meta"] {
+        assert_eq!(state.versions[name], state.available_versions[name]);
+    }
+    assert_eq!(state.versions["unselected-plugin"], "old");
+}
+
+#[test]
+fn package_retry_does_not_repeat_completed_upgrades() {
+    let mut fixture = Fixture::new();
+    fixture.options.myfeed_packages = ["nikki", "luci-app-nikki"].map(str::to_owned).to_vec();
+    write(
+        &fixture.root.join("etc/apk/keys/myfeed.pem"),
+        "fixture public key",
+    );
+    {
+        let mut state = fixture.runner.0.lock().unwrap();
+        state.installed.insert("nikki".into());
+        state.failed.insert("luci-app-nikki".into());
+    }
+    let id = fixture.applied();
+    fixture.jobs.boot_id = Some("after".into());
+    fixture.jobs.worker(true).unwrap();
+    assert_eq!(fixture.jobs.load(&id).unwrap()["status"], "failed_packages");
+    fixture.runner.0.lock().unwrap().failed.clear();
+    fixture.jobs.retry(&id).unwrap();
+    fixture.jobs.worker(true).unwrap();
+    assert_eq!(fixture.jobs.load(&id).unwrap()["status"], "complete");
+    let state = fixture.runner.0.lock().unwrap();
+    let attempts = |package: &str| {
+        state
+            .commands
+            .iter()
+            .filter(|args| {
+                args.iter().any(|argument| argument == "add")
+                    && args.last().is_some_and(|argument| argument == package)
+            })
+            .count()
+    };
+    assert_eq!(attempts("nikki@myfeed"), 1);
+    assert_eq!(attempts("luci-app-nikki@myfeed"), 2);
 }
 
 #[test]

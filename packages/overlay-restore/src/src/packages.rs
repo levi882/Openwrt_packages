@@ -376,9 +376,7 @@ pub fn install_packages(jobs: &Jobs, id: &str) -> Result<()> {
         ] {
             for package in packages {
                 let present_before = installed(jobs, id, deadline, package)?;
-                if present_before
-                    && (!tagged || state["packages"][package]["status"] == "installed")
-                {
+                if present_before && state["packages"][package]["status"] == "installed" {
                     record(
                         jobs,
                         &mut state,
@@ -405,7 +403,7 @@ pub fn install_packages(jobs: &Jobs, id: &str) -> Result<()> {
                     jobs,
                     id,
                     deadline,
-                    &["apk", "--wait", "30", "add", &argument],
+                    &["apk", "--wait", "30", "add", "--upgrade", &argument],
                     120,
                 )?;
                 if code != 0 || !installed(jobs, id, deadline, package)? {
