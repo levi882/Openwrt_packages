@@ -2023,6 +2023,43 @@ fn local_feed_resolves_applications_against_pinned_firmware() {
 }
 
 #[test]
+fn cache_dependency_conflicts_are_detected_before_downloading_or_replacing_the_snapshot() {
+    let mut fixture = Fixture::new();
+    seed_local_feed(&mut fixture);
+    seed_luci_core(&fixture);
+    write(
+        &fixture
+            .root
+            .join("etc/overlay-restore-bootstrap/myfeed.pem"),
+        "fixture trusted key",
+    );
+    fixture
+        .runner
+        .0
+        .lock()
+        .unwrap()
+        .failed
+        .insert("curl".into());
+    local_feed::queue(&fixture.jobs, &fixture.options).unwrap();
+    local_feed::work(&fixture.jobs).unwrap();
+    assert_eq!(
+        local_feed::status(&fixture.jobs, &fixture.options).unwrap()["status"],
+        "failed"
+    );
+    let state = fixture.runner.0.lock().unwrap();
+    assert!(
+        !state
+            .commands
+            .iter()
+            .any(|args| args.iter().any(|arg| arg == "download"))
+    );
+    assert_eq!(
+        fs::read_to_string(fixture.root.join("mnt/storage/restore-feed/current")).unwrap(),
+        "a".repeat(32)
+    );
+}
+
+#[test]
 fn later_dependencies_do_not_hide_a_package_that_was_reinstalled_after_removal() {
     let mut fixture = Fixture::new();
     fixture.options.remove_packages = vec!["luci-app-ddns".to_owned()];

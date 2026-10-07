@@ -341,26 +341,34 @@ fn download(jobs: &Jobs, state: &Value) -> Result<(String, Vec<String>)> {
     };
     run(&["update".into()], 180)?;
     let mut packages = required(jobs, &options)?;
-    let mut args = vec![
-        "cache".into(),
-        "download".into(),
-        "--upgrade".into(),
-        "--add-dependencies".into(),
-    ];
-    args.extend(packages.clone());
-    run(&args, 900)?;
-    let mut warnings = Vec::new();
-    for package in &options.optional_packages {
-        let dependency = format!("{package}@myfeed");
-        let mut args = vec![
+    let firmware = crate::firmware::protected(&root)?;
+    let resolve = |packages: &[String], timeout| -> Result<()> {
+        let requests = packages
+            .iter()
+            .filter(|package| !firmware.contains_key(crate::firmware::constraint_name(package)))
+            .cloned()
+            .collect::<Vec<_>>();
+        // Cache download is not an installation check. Simulate the actual
+        // add first so an incomplete dependency solution cannot become ready.
+        let mut simulation = vec!["add".into(), "--upgrade".into(), "--simulate".into()];
+        simulation.extend(requests.clone());
+        run(&simulation, 180)?;
+        let mut download = vec![
             "cache".into(),
             "download".into(),
             "--upgrade".into(),
             "--add-dependencies".into(),
         ];
-        args.extend(packages.clone());
-        args.push(dependency.clone());
-        match run(&args, 180) {
+        download.extend(requests);
+        run(&download, timeout)
+    };
+    resolve(&packages, 900)?;
+    let mut warnings = Vec::new();
+    for package in &options.optional_packages {
+        let dependency = format!("{package}@myfeed");
+        let mut optional = packages.clone();
+        optional.push(dependency.clone());
+        match resolve(&optional, 180) {
             Ok(()) => packages.push(dependency),
             Err(_) => warnings.push(format!("Optional package was not cached: {package}")),
         }
