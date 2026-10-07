@@ -369,13 +369,23 @@ pub fn install_packages(jobs: &Jobs, id: &str) -> Result<()> {
             }
         }
         let mut missing_installations = HashSet::new();
+        let firmware_packages = crate::firmware::protected(&jobs.root)?;
         for (packages, tagged, required) in [
             (&options.install_packages, false, true),
             (&options.myfeed_packages, true, true),
             (&options.optional_packages, true, false),
         ] {
             for package in packages {
-                if crate::luci::CORE.contains(&package.as_str()) {
+                if firmware_packages.contains_key(package) {
+                    record(
+                        jobs,
+                        &mut state,
+                        package,
+                        "installed",
+                        "install",
+                        required,
+                        "Retained the current firmware package",
+                    )?;
                     continue;
                 }
                 let present_before = installed(jobs, id, deadline, package)?;
@@ -431,53 +441,8 @@ pub fn install_packages(jobs: &Jobs, id: &str) -> Result<()> {
                 }
             }
         }
-        // Application dependencies may upgrade luci-base without upgrading the
-        // already-installed status/network/system views. Resolve the whole core
-        // last, also on retry, so later application installs cannot split it.
-        let luci_packages = crate::luci::packages(&jobs.root, &options)?;
-        for package in &luci_packages {
-            record(jobs, &mut state, package, "running", "install", true, "")?;
-        }
-        let mut arguments = vec!["apk", "--wait", "30", "add", "--upgrade", "--latest"];
-        arguments.extend(luci_packages.iter().map(String::as_str));
-        let (code, output) = execute(jobs, id, deadline, &arguments, 180)?;
-        let synchronized = (|| -> Result<String> {
-            if code != 0 {
-                bail!("Unable to upgrade the LuCI core together: {output}");
-            }
-            let mut verification = vec!["apk", "list", "--installed"];
-            verification.extend(luci_packages.iter().map(String::as_str));
-            let (code, output) = execute(jobs, id, deadline, &verification, 60)?;
-            if code != 0 {
-                bail!("Unable to verify the installed LuCI core: {output}");
-            }
-            crate::luci::verify_versions(&output, &luci_packages)
-        })();
-        match synchronized {
-            Ok(version) => {
-                for package in &luci_packages {
-                    record(jobs, &mut state, package, "installed", "install", true, "")?;
-                }
-                jobs.log(
-                    id,
-                    &format!("LuCI core upgraded and verified together: {version}"),
-                )?;
-            }
-            Err(error) => {
-                for package in &luci_packages {
-                    record(
-                        jobs,
-                        &mut state,
-                        package,
-                        "failed",
-                        "install",
-                        true,
-                        &error.to_string(),
-                    )?;
-                }
-                bail!("{error}");
-            }
-        }
+        crate::firmware::verify(&jobs.root, &firmware_packages)?;
+        jobs.log(id, "Verified that application recovery retained the firmware LuCI, kernel, modules and system libraries.")?;
         // Later dependency transactions can finish an earlier failed install,
         // or install a package that an earlier removal had just removed.
         // Report the final package state rather than an intermediate result.

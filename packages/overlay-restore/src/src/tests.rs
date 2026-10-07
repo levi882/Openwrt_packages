@@ -86,7 +86,7 @@ fn seed_local_feed(fixture: &mut Fixture) -> PathBuf {
         ),
     );
     let manifest = json!({"format": 1, "created": 1, "arch": "x86_64", "myfeed": fixture.options.myfeed_repo,
-        "packages": ["curl", "overlay-restore@myfeed>=0.2.0-r16", "luci-app-overlay-restore@myfeed>=0.2.0-r19", "luci-base"],
+        "packages": ["curl", "overlay-restore@myfeed>=0.2.0-r17", "luci-app-overlay-restore@myfeed>=0.2.0-r22"],
         "warnings": [], "files": {"curl-test.apk": util::digest_file(&store.join("cache/curl-test.apk")).unwrap(),
             "../repositories.list": util::digest_file(&store.join("repositories.list")).unwrap()}});
     save_json(&store.join("manifest.json"), &manifest).unwrap();
@@ -488,6 +488,7 @@ fn restored_fstab_keeps_the_local_feed_disk_and_drops_conflicting_old_mounts() {
 
 #[derive(Default)]
 struct MockState {
+    root: PathBuf,
     uci_show: Option<String>,
     installed: HashSet<String>,
     versions: BTreeMap<String, String>,
@@ -568,17 +569,52 @@ impl Runner for MockRunner {
                 for package in &requested {
                     selected.extend(state.dependencies.get(package).cloned().unwrap_or_default());
                 }
+                let pins = fs::read_to_string(state.root.join("etc/apk/world"))
+                    .unwrap_or_default()
+                    .lines()
+                    .filter_map(|line| {
+                        let (name, version) = line.split_once('=')?;
+                        Some((name.to_owned(), version.to_owned()))
+                    })
+                    .collect::<BTreeMap<_, _>>();
+                if arguments.iter().any(|arg| arg == "--simulate") {
+                    return (
+                        0,
+                        selected
+                            .iter()
+                            .filter_map(|name| {
+                                if !state.installed.contains(name) {
+                                    Some(format!("(1/1) Installing {name} (1.0)\n"))
+                                } else if !pins.contains_key(name)
+                                    && state.versions.get(name)
+                                        != state.available_versions.get(name)
+                                    && state.available_versions.contains_key(name)
+                                {
+                                    Some(format!("(1/1) Upgrading {name} (old -> new)\n"))
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect(),
+                    );
+                }
                 for name in selected {
                     if (!state.installed.contains(&name)
                         || arguments.iter().any(|argument| argument == "--upgrade"))
+                        && !pins.contains_key(&name)
                         && let Some(version) = state.available_versions.get(&name).cloned()
                     {
                         state.versions.insert(name.clone(), version);
                     }
                     state.installed.insert(name);
                 }
+                write_mock_database(&state);
             } else if let Some(position) = arguments.iter().position(|argument| argument == "del") {
-                let requested: HashSet<_> = arguments[position + 1..].iter().cloned().collect();
+                let requested: HashSet<_> = arguments[position + 1..]
+                    .iter()
+                    .filter(|arg| !arg.starts_with('-'))
+                    .cloned()
+                    .collect();
                 let mut removable = requested.clone();
                 loop {
                     let blocked: Vec<_> = removable
@@ -601,11 +637,18 @@ impl Runner for MockRunner {
                     }
                 }
                 for package in &removable {
-                    state.installed.remove(package);
+                    if !arguments.iter().any(|arg| arg == "--simulate") {
+                        state.installed.remove(package);
+                    }
                 }
+                write_mock_database(&state);
                 let retained: Vec<_> = requested.difference(&removable).cloned().collect();
                 return (
-                    state.remove_exit_code,
+                    if arguments.iter().any(|arg| arg == "--simulate") {
+                        0
+                    } else {
+                        state.remove_exit_code
+                    },
                     if retained.is_empty() {
                         String::new()
                     } else {
@@ -642,6 +685,24 @@ impl Runner for MockRunner {
     }
 }
 
+fn write_mock_database(state: &MockState) {
+    let database = state
+        .installed
+        .iter()
+        .map(|name| {
+            format!(
+                "P:{name}\nV:{}\n\n",
+                state
+                    .versions
+                    .get(name)
+                    .map(String::as_str)
+                    .unwrap_or("1.0")
+            )
+        })
+        .collect::<String>();
+    write(&state.root.join("lib/apk/db/installed"), database);
+}
+
 struct Fixture {
     _temporary: TempDir,
     root: PathBuf,
@@ -655,6 +716,9 @@ impl Fixture {
         let temporary = tempdir().unwrap();
         let root = temporary.path().to_owned();
         let runner = Arc::new(MockRunner::default());
+        runner.0.lock().unwrap().root = root.clone();
+        write(&root.join("lib/apk/db/installed"), "");
+        write(&root.join("etc/apk/world"), "");
         let mut jobs = Jobs::fixture(&root, runner.clone()).unwrap();
         jobs.boot_id = Some("before".to_owned());
         let filename = root.join("backup.tar.gz");
@@ -1632,7 +1696,10 @@ fn selected_applications_translations_and_themes_are_removed_together() {
         state
             .commands
             .iter()
-            .filter(|arguments| arguments.iter().any(|argument| argument == "del"))
+            .filter(
+                |arguments| arguments.iter().any(|argument| argument == "del")
+                    && !arguments.iter().any(|arg| arg == "--simulate")
+            )
             .count(),
         1
     );
@@ -1689,7 +1756,10 @@ fn removal_retains_unselected_dependents_and_reports_each_package_result() {
     let removal = state
         .commands
         .iter()
-        .find(|arguments| arguments.iter().any(|argument| argument == "del"))
+        .find(|arguments| {
+            arguments.iter().any(|argument| argument == "del")
+                && !arguments.iter().any(|arg| arg == "--simulate")
+        })
         .unwrap();
     assert_eq!(&removal[4..], &fixture.options.remove_packages[..3]);
     assert!(
@@ -1733,8 +1803,8 @@ fn later_dependency_installation_clears_an_earlier_download_failure() {
             .commands
             .iter()
             .any(|arguments| arguments
-                .last()
-                .is_some_and(|argument| argument == "luci-app-homebox@myfeed"))
+                .iter()
+                .any(|argument| argument == "luci-app-homebox@myfeed"))
     );
 }
 
@@ -1833,7 +1903,8 @@ fn package_retry_does_not_repeat_completed_upgrades() {
             .iter()
             .filter(|args| {
                 args.iter().any(|argument| argument == "add")
-                    && args.last().is_some_and(|argument| argument == package)
+                    && args.iter().any(|argument| argument == "--simulate")
+                    && args.iter().any(|argument| argument == package)
             })
             .count()
     };
@@ -1841,14 +1912,23 @@ fn package_retry_does_not_repeat_completed_upgrades() {
     assert_eq!(attempts("luci-app-nikki@myfeed"), 2);
 }
 
+const LUCI_CORE: [&str; 5] = [
+    "luci-base",
+    "luci-mod-status",
+    "luci-mod-network",
+    "luci-mod-system",
+    "luci-mod-admin-full",
+];
+
 fn seed_luci_core(fixture: &Fixture) {
-    let database = crate::luci::CORE
+    let database = LUCI_CORE
         .iter()
         .map(|name| format!("P:{name}\nV:old\n\n"))
         .collect::<String>();
-    write(&fixture.root.join("rom/lib/apk/db/installed"), database);
+    write(&fixture.root.join("rom/lib/apk/db/installed"), &database);
+    write(&fixture.root.join("lib/apk/db/installed"), &database);
     let mut state = fixture.runner.0.lock().unwrap();
-    for name in crate::luci::CORE {
+    for name in LUCI_CORE {
         state.installed.insert(name.into());
         state.versions.insert(name.into(), "old".into());
         state.available_versions.insert(name.into(), "new".into());
@@ -1856,97 +1936,61 @@ fn seed_luci_core(fixture: &Fixture) {
 }
 
 #[test]
-fn application_dependencies_cannot_leave_old_luci_core_views_installed() {
+fn application_upgrades_preserve_firmware_luci_dependencies() {
     let mut fixture = Fixture::new();
     seed_luci_core(&fixture);
     fixture.options.install_packages = vec!["curl".into()];
-    fixture
-        .runner
-        .0
-        .lock()
-        .unwrap()
-        .dependencies
-        .insert("curl".into(), vec!["luci-base".into()]);
+    {
+        let mut state = fixture.runner.0.lock().unwrap();
+        state
+            .dependencies
+            .insert("curl".into(), vec!["luci-base".into()]);
+        state.available_versions.insert("curl".into(), "new".into());
+    }
     let id = fixture.applied();
     fixture.jobs.boot_id = Some("after".into());
     fixture.jobs.worker(true).unwrap();
     let task = fixture.jobs.load(&id).unwrap();
     assert_eq!(task["status"], "complete");
     let state = fixture.runner.0.lock().unwrap();
-    for name in crate::luci::CORE {
-        assert_eq!(state.versions[name], "new");
-        assert_eq!(task["packages"][name]["status"], "installed");
+    for name in LUCI_CORE {
+        assert_eq!(state.versions[name], "old");
     }
-    let installs: Vec<_> = state
-        .commands
-        .iter()
-        .filter(|args| args.iter().any(|arg| arg == "add"))
-        .collect();
-    let group = installs.last().unwrap();
+    assert_eq!(state.versions["curl"], "new");
+    assert!(!state.commands.iter().flatten().any(|arg| arg == "--latest"));
     assert!(
-        crate::luci::CORE
-            .iter()
-            .all(|name| group.iter().any(|arg| arg == name))
+        !fs::read_to_string(fixture.root.join("etc/apk/world"))
+            .unwrap()
+            .contains("luci-base=old")
     );
-    assert!(group.iter().any(|arg| arg == "--latest"));
 }
 
 #[test]
-fn incoherent_luci_versions_do_not_report_success_and_can_retry() {
+fn firmware_luci_modules_may_have_different_versions() {
     let mut fixture = Fixture::new();
     seed_luci_core(&fixture);
-    fixture
-        .runner
-        .0
-        .lock()
-        .unwrap()
-        .available_versions
-        .insert("luci-mod-status".into(), "different-source-version".into());
+    {
+        let mut state = fixture.runner.0.lock().unwrap();
+        state
+            .versions
+            .insert("luci-mod-status".into(), "custom-firmware".into());
+        write_mock_database(&state);
+    }
+    fixture.options.install_packages.push("luci-base".into());
     let id = fixture.applied();
     fixture.jobs.boot_id = Some("after".into());
     fixture.jobs.worker(true).unwrap();
     let task = fixture.jobs.load(&id).unwrap();
-    assert_eq!(task["status"], "failed_packages");
-    assert!(
-        task["error"]
-            .as_str()
-            .unwrap()
-            .contains("LuCI core versions do not match")
-    );
-    assert_eq!(task["packages"]["luci-mod-status"]["status"], "failed");
-    fixture
-        .runner
-        .0
-        .lock()
-        .unwrap()
-        .available_versions
-        .insert("luci-mod-status".into(), "new".into());
-    fixture.jobs.retry(&id).unwrap();
-    fixture.jobs.worker(true).unwrap();
-    assert_eq!(fixture.jobs.load(&id).unwrap()["status"], "complete");
-}
-
-#[test]
-fn local_cache_without_existing_luci_views_requires_refresh() {
-    let mut fixture = Fixture::new();
-    seed_local_feed(&mut fixture);
-    seed_luci_core(&fixture);
+    assert_eq!(task["status"], "complete");
+    assert_eq!(task["packages"]["luci-base"]["status"], "installed");
     assert_eq!(
-        local_feed::status(&fixture.jobs, &fixture.options).unwrap()["status"],
-        "stale"
-    );
-    assert!(
-        local_feed::select(
-            &fixture.jobs,
-            &fixture.options,
-            &fixture.options.myfeed_repo
-        )
-        .is_err()
+        fixture.runner.0.lock().unwrap().versions["luci-mod-status"],
+        "custom-firmware"
     );
 }
 
 #[test]
-fn local_feed_download_includes_core_views_from_firmware() {
+fn local_feed_resolves_applications_against_pinned_firmware() {
     let mut fixture = Fixture::new();
     seed_local_feed(&mut fixture);
     seed_luci_core(&fixture);
@@ -1964,47 +2008,54 @@ fn local_feed_download_includes_core_views_from_firmware() {
         .iter()
         .find(|args| args.iter().any(|arg| arg == "download"))
         .unwrap();
+    assert!(download.iter().any(|arg| arg == "--add-dependencies"));
+    assert!(!download.iter().any(|arg| arg == "--available"));
     assert!(
-        crate::luci::CORE
+        LUCI_CORE
             .iter()
-            .all(|name| download.iter().any(|arg| arg == name))
+            .all(|name| !download.iter().any(|arg| arg == name))
     );
+    let root = &download[download.iter().position(|arg| arg == "--root").unwrap() + 1];
+    let world = fs::read_to_string(Path::new(root).join("etc/apk/world")).unwrap();
+    for name in LUCI_CORE {
+        assert!(world.contains(&format!("{name}=old\n")));
+    }
 }
 
 #[test]
-fn luci_group_keeps_only_present_or_requested_views() {
-    let fixture = Fixture::new();
-    write(
-        &fixture.root.join("lib/apk/db/installed"),
-        "P:luci-mod-status\nV:old\n\nP:luci-app-nikki\nV:old\n",
-    );
+fn cache_dependency_conflicts_are_detected_before_downloading_or_replacing_the_snapshot() {
+    let mut fixture = Fixture::new();
+    seed_local_feed(&mut fixture);
+    seed_luci_core(&fixture);
     write(
         &fixture
             .root
-            .join("rom/lib/apk/packages/luci-mod-network.list"),
-        "firmware list",
+            .join("etc/overlay-restore-bootstrap/myfeed.pem"),
+        "fixture trusted key",
     );
-    let mut options = fixture.options.clone();
-    options.install_packages.push("luci-mod-system".into());
+    fixture
+        .runner
+        .0
+        .lock()
+        .unwrap()
+        .failed
+        .insert("curl".into());
+    local_feed::queue(&fixture.jobs, &fixture.options).unwrap();
+    local_feed::work(&fixture.jobs).unwrap();
     assert_eq!(
-        crate::luci::packages(&fixture.root, &options).unwrap(),
-        [
-            "luci-base",
-            "luci-mod-status",
-            "luci-mod-network",
-            "luci-mod-system"
-        ]
+        local_feed::status(&fixture.jobs, &fixture.options).unwrap()["status"],
+        "failed"
     );
-}
-
-#[test]
-fn missing_luci_core_packages_are_rejected_during_verification() {
+    let state = fixture.runner.0.lock().unwrap();
     assert!(
-        crate::luci::verify_versions(
-            "luci-base-new noarch [installed]\n",
-            &["luci-base".into(), "luci-mod-status".into()]
-        )
-        .is_err()
+        !state
+            .commands
+            .iter()
+            .any(|args| args.iter().any(|arg| arg == "download"))
+    );
+    assert_eq!(
+        fs::read_to_string(fixture.root.join("mnt/storage/restore-feed/current")).unwrap(),
+        "a".repeat(32)
     );
 }
 

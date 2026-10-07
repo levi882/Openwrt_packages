@@ -179,13 +179,54 @@ prepare_repository() {
     fi
 }
 
+restore_firmware_constraints() {
+    before="$bootstrap_dir/firmware-world.before"
+    pins="$bootstrap_dir/firmware-pins"
+    [ -f "$before" ] && [ -f "$pins" ] || return 0
+    awk '
+        FILENAME == ARGV[1] { split($0, parts, "="); pinned[parts[1]]=1; next }
+        FILENAME == ARGV[2] { for (i=1; i<=NF; i++) { name=$i; sub(/[@=<>~].*/, "", name); if (name in pinned) print $i }; next }
+        { for (i=1; i<=NF; i++) { name=$i; sub(/[@=<>~].*/, "", name); if (!(name in pinned)) print $i } }
+    ' "$pins" "$before" "$bootstrap_root/etc/apk/world" > "$bootstrap_dir/firmware-world.restored" || return 1
+    chmod 0644 "$bootstrap_dir/firmware-world.restored" &&
+        mv "$bootstrap_dir/firmware-world.restored" "$bootstrap_root/etc/apk/world" || return 1
+    rm -f "$before" "$pins"
+}
+
+prepare_firmware_constraints() {
+    restore_firmware_constraints || return 1
+    [ -f "$bootstrap_root/lib/apk/db/installed" ] || return 0
+    cp "$bootstrap_root/etc/apk/world" "$bootstrap_dir/firmware-world.before" || return 1
+    awk '
+        /^P:/ { name=substr($0,3) }
+        /^V:/ { version=substr($0,3) }
+        /^$/ { emit(); name=""; version="" }
+        function emit() {
+            if (name ~ /^(lib|kmod-|luci-mod-|luci-lib-|rpcd-|ucode-|procd-|uhttpd-|apk-)/ ||
+                name ~ /^(base-files|busybox|kernel|procd|rpcd|uci|ubus|ubusd|uhttpd|ucode|netifd|firewall4|fstools|logd|dropbear|dnsmasq|dnsmasq-full|nftables|nftables-json|ip-full|ip-tiny|block-mount|ca-bundle|urngd|uclient-fetch|jsonfilter|jshn|mtd|fwtool|odhcp6c|odhcpd|odhcpd-ipv6only|luci|luci-base|luci-light|luci-ssl|luci-ssl-openssl|luci-theme-bootstrap)$/)
+                if (version != "") print name "=" version
+        }
+        END { emit() }
+    ' "$bootstrap_root/lib/apk/db/installed" > "$bootstrap_dir/firmware-pins" || return 1
+    chmod 0600 "$bootstrap_dir/firmware-world.before" "$bootstrap_dir/firmware-pins" || return 1
+    awk '
+        FILENAME == ARGV[1] { split($0, parts, "="); pinned[parts[1]]=1; next }
+        { for (i=1; i<=NF; i++) { name=$i; sub(/[@=<>~].*/, "", name); if (!(name in pinned)) print $i } }
+    ' "$bootstrap_dir/firmware-pins" "$bootstrap_dir/firmware-world.before" > "$bootstrap_dir/firmware-world.pinned" || return 1
+    cat "$bootstrap_dir/firmware-pins" >> "$bootstrap_dir/firmware-world.pinned" || return 1
+    chmod 0644 "$bootstrap_dir/firmware-world.pinned" &&
+        mv "$bootstrap_dir/firmware-world.pinned" "$bootstrap_root/etc/apk/world"
+}
+
 package_operation() {
+    # Exact constraints keep installed firmware dependencies even when the
+    # selected recovery tools are upgraded. The simulated plan is checked too.
     if [ "$updating" = 1 ]; then
-        apk_command --repositories-file "$lockdir/refresh.list" --cache-max-age 60 add --upgrade "$@" 'overlay-restore@myfeed>=0.2.0-r13' 'luci-app-overlay-restore@myfeed>=0.2.0-r19'
+        apk_command --repositories-file "$lockdir/refresh.list" --cache-max-age 60 add --upgrade "$@" 'overlay-restore@myfeed>=0.2.0-r17' 'luci-app-overlay-restore@myfeed>=0.2.0-r22'
     elif [ "$repair" = 1 ]; then
         apk_command fix --reinstall --upgrade "$@" overlay-restore luci-app-overlay-restore
     else
-        apk_command add "$@" 'overlay-restore@myfeed>=0.2.0-r13' 'luci-app-overlay-restore@myfeed>=0.2.0-r19'
+        apk_command add "$@" 'overlay-restore@myfeed>=0.2.0-r17' 'luci-app-overlay-restore@myfeed>=0.2.0-r22'
     fi
 }
 
@@ -207,12 +248,12 @@ run() (
     enabled || return 0
     command -v apk >/dev/null 2>&1 || return 1
     fingerprint=$(firmware_fingerprint) || return 1
-    installed && ! refresh_pending && return 0
+    installed && ! refresh_pending && [ ! -e "$bootstrap_dir/firmware-world.before" ] && return 0
     [ ! -L "$bootstrap_dir" ] && [ ! -L "$logfile" ] || return 1
     mkdir -p "$bootstrap_dir" "$bootstrap_root/tmp" || return 1
     chmod 0700 "$bootstrap_dir" || return 1
     mkdir "$lockdir" 2>/dev/null || return 0
-    trap 'rm -f "$lockdir/plan" "$lockdir/refresh.list"; rmdir "$lockdir" 2>/dev/null' EXIT
+    trap 'restore_firmware_constraints || { log "Unable to restore firmware constraints."; exit 1; }; rm -f "$lockdir/plan" "$lockdir/refresh.list"; rmdir "$lockdir" 2>/dev/null' EXIT
     trap 'exit 1' HUP INT TERM
     release=$(sed -n "s/^DISTRIB_RELEASE=['\"]\\{0,1\\}\\([^'\"]*\\).*/\\1/p" "$bootstrap_root/etc/openwrt_release")
     case "$release" in 25.12|25.12.*) ;; *) log "Unsupported firmware release: $release"; return 1 ;; esac
@@ -226,6 +267,7 @@ run() (
         [ "$delay" -le 300 ] || return 2
     log 'Checking retained recovery tools after a firmware upgrade.'
     prepare_repository || return 1
+    prepare_firmware_constraints || return 1
     repair=0
     updating=0
     if apk_command info -e overlay-restore >/dev/null 2>&1 &&

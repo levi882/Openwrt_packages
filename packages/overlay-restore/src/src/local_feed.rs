@@ -123,8 +123,8 @@ fn directory(jobs: &Jobs, value: &str, create: bool) -> Result<PathBuf> {
     Ok(path)
 }
 
-fn required(jobs: &Jobs, options: &Options) -> Result<Vec<String>> {
-    let mut packages: Vec<String> = options
+fn required(_jobs: &Jobs, options: &Options) -> Result<Vec<String>> {
+    let packages: Vec<String> = options
         .install_packages
         .iter()
         .cloned()
@@ -135,15 +135,10 @@ fn required(jobs: &Jobs, options: &Options) -> Result<Vec<String>> {
                 .map(|p| format!("{p}@myfeed")),
         )
         .chain([
-            "overlay-restore@myfeed>=0.2.0-r16".into(),
-            "luci-app-overlay-restore@myfeed>=0.2.0-r19".into(),
+            "overlay-restore@myfeed>=0.2.0-r17".into(),
+            "luci-app-overlay-restore@myfeed>=0.2.0-r22".into(),
         ])
         .collect();
-    for package in crate::luci::packages(&jobs.root, options)? {
-        if !packages.contains(&package) {
-            packages.push(package);
-        }
-    }
     Ok(packages)
 }
 
@@ -283,8 +278,7 @@ fn download(jobs: &Jobs, state: &Value) -> Result<(String, Vec<String>)> {
     fs::create_dir(&store)?;
     let root = store.join("solver");
     mkdir(&root.join("cache"), 0o700)?;
-    atomic_write(&root.join("etc/apk/world"), b"", 0o600)?;
-    atomic_write(&root.join("lib/apk/db/installed"), b"", 0o600)?;
+    crate::firmware::seed_solver(&jobs.root, &root)?;
     atomic_write(&root.join("etc/apk/arch"), b"x86_64\n", 0o644)?;
     for relative in [
         "rom/etc/apk/keys",
@@ -347,16 +341,34 @@ fn download(jobs: &Jobs, state: &Value) -> Result<(String, Vec<String>)> {
     };
     run(&["update".into()], 180)?;
     let mut packages = required(jobs, &options)?;
-    let mut args = vec!["cache".into(), "download".into(), "--available".into()];
-    args.extend(packages.clone());
-    run(&args, 900)?;
+    let firmware = crate::firmware::protected(&root)?;
+    let resolve = |packages: &[String], timeout| -> Result<()> {
+        let requests = packages
+            .iter()
+            .filter(|package| !firmware.contains_key(crate::firmware::constraint_name(package)))
+            .cloned()
+            .collect::<Vec<_>>();
+        // Cache download is not an installation check. Simulate the actual
+        // add first so an incomplete dependency solution cannot become ready.
+        let mut simulation = vec!["add".into(), "--upgrade".into(), "--simulate".into()];
+        simulation.extend(requests.clone());
+        run(&simulation, 180)?;
+        let mut download = vec![
+            "cache".into(),
+            "download".into(),
+            "--upgrade".into(),
+            "--add-dependencies".into(),
+        ];
+        download.extend(requests);
+        run(&download, timeout)
+    };
+    resolve(&packages, 900)?;
     let mut warnings = Vec::new();
     for package in &options.optional_packages {
         let dependency = format!("{package}@myfeed");
-        let mut args = vec!["cache".into(), "download".into(), "--available".into()];
-        args.extend(packages.clone());
-        args.push(dependency.clone());
-        match run(&args, 180) {
+        let mut optional = packages.clone();
+        optional.push(dependency.clone());
+        match resolve(&optional, 180) {
             Ok(()) => packages.push(dependency),
             Err(_) => warnings.push(format!("Optional package was not cached: {package}")),
         }
@@ -503,6 +515,18 @@ pub fn task(jobs: &Jobs, id: &str, verify: bool) -> Result<Option<Cache>> {
 }
 
 pub fn run(jobs: &Jobs, id: &str, arguments: &[&str], timeout: u64) -> Result<(i32, String)> {
+    if arguments
+        .iter()
+        .any(|arg| ["add", "del", "fix"].contains(arg))
+    {
+        return crate::firmware::transaction(&jobs.root, arguments, |checked| {
+            run_unchecked(jobs, id, checked, timeout)
+        });
+    }
+    run_unchecked(jobs, id, arguments, timeout)
+}
+
+fn run_unchecked(jobs: &Jobs, id: &str, arguments: &[&str], timeout: u64) -> Result<(i32, String)> {
     let Some(cache) = task(jobs, id, false)? else {
         return jobs.run(arguments, Some(id), timeout);
     };
