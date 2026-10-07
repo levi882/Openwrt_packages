@@ -222,11 +222,11 @@ package_operation() {
     # Exact constraints keep installed firmware dependencies even when the
     # selected recovery tools are upgraded. The simulated plan is checked too.
     if [ "$updating" = 1 ]; then
-        apk_command --repositories-file "$lockdir/refresh.list" --cache-max-age 60 add --upgrade "$@" 'overlay-restore@myfeed>=0.2.0-r17' 'luci-app-overlay-restore@myfeed>=0.2.0-r22'
+        apk_command --repositories-file "$lockdir/refresh.list" --cache-max-age 60 add --upgrade "$@" 'overlay-restore@myfeed>=0.2.0-r18' 'luci-app-overlay-restore@myfeed>=0.2.0-r23'
     elif [ "$repair" = 1 ]; then
         apk_command fix --reinstall --upgrade "$@" overlay-restore luci-app-overlay-restore
     else
-        apk_command add "$@" 'overlay-restore@myfeed>=0.2.0-r17' 'luci-app-overlay-restore@myfeed>=0.2.0-r22'
+        apk_command add "$@" 'overlay-restore@myfeed>=0.2.0-r18' 'luci-app-overlay-restore@myfeed>=0.2.0-r23'
     fi
 }
 
