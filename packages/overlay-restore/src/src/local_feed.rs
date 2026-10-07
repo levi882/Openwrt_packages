@@ -123,8 +123,8 @@ fn directory(jobs: &Jobs, value: &str, create: bool) -> Result<PathBuf> {
     Ok(path)
 }
 
-fn required(options: &Options) -> Vec<String> {
-    options
+fn required(jobs: &Jobs, options: &Options) -> Result<Vec<String>> {
+    let mut packages: Vec<String> = options
         .install_packages
         .iter()
         .cloned()
@@ -135,10 +135,16 @@ fn required(options: &Options) -> Vec<String> {
                 .map(|p| format!("{p}@myfeed")),
         )
         .chain([
-            "overlay-restore@myfeed>=0.2.0-r15".into(),
+            "overlay-restore@myfeed>=0.2.0-r16".into(),
             "luci-app-overlay-restore@myfeed>=0.2.0-r19".into(),
         ])
-        .collect()
+        .collect();
+    for package in crate::luci::packages(&jobs.root, options)? {
+        if !packages.contains(&package) {
+            packages.push(package);
+        }
+    }
+    Ok(packages)
 }
 
 fn repositories(jobs: &Jobs, myfeed: &str) -> Result<String> {
@@ -340,7 +346,7 @@ fn download(jobs: &Jobs, state: &Value) -> Result<(String, Vec<String>)> {
         Ok(())
     };
     run(&["update".into()], 180)?;
-    let mut packages = required(&options);
+    let mut packages = required(jobs, &options)?;
     let mut args = vec!["cache".into(), "download".into(), "--available".into()];
     args.extend(packages.clone());
     run(&args, 900)?;
@@ -472,7 +478,7 @@ pub fn select(jobs: &Jobs, options: &Options, myfeed: &str) -> Result<String> {
     if manifest.myfeed != myfeed {
         bail!("The local feed was prepared for a different myfeed address");
     }
-    if required(options)
+    if required(jobs, options)?
         .iter()
         .any(|p| !manifest.packages.contains(p))
     {
@@ -539,7 +545,7 @@ pub fn status(jobs: &Jobs, options: &Options) -> Result<Value> {
         }
         if output["status"] == "ready"
             && (manifest.myfeed != jobs.feed_url(options)?
-                || required(options)
+                || required(jobs, options)?
                     .iter()
                     .any(|p| !manifest.packages.contains(p)))
         {
