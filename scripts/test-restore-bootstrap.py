@@ -65,6 +65,11 @@ if command == "update":
              (not offline and os.environ.get("MOCK_ONLINE_UPDATE_ERROR")) else 0)
 if command not in ("add", "fix"):
     sys.exit(2)
+if os.environ.get("MOCK_FIRMWARE_PINS"):
+    world = (root / "etc/apk/world").read_text().splitlines()
+    assert "kernel=6.18.55-r1" in world, world
+    assert "luci-base=26.100" in world, world
+    assert "luci-mod-status=26.099" in world, world
 if os.environ.get("MOCK_LOCAL_ONLY") and not offline:
     print("ERROR: online transaction forbidden")
     sys.exit(1)
@@ -193,8 +198,8 @@ class BootstrapTests(unittest.TestCase):
         self.set_config({"": "restore"})
         self.assertEqual(self.run_bootstrap().returncode, 0)
         self.assertEqual(len(self.transactions()), 1)
-        self.assertIn("overlay-restore@myfeed>=0.2.0-r13", self.transactions()[0])
-        self.assertIn("luci-app-overlay-restore@myfeed>=0.2.0-r19", self.transactions()[0])
+        self.assertIn("overlay-restore@myfeed>=0.2.0-r17", self.transactions()[0])
+        self.assertIn("luci-app-overlay-restore@myfeed>=0.2.0-r22", self.transactions()[0])
         self.assertEqual(self.run_bootstrap("status").stdout.strip(), "installed")
         self.assertEqual(self.run_bootstrap().returncode, 0)
         self.assertEqual(len(self.transactions()), 1)
@@ -205,6 +210,31 @@ class BootstrapTests(unittest.TestCase):
         self.assertEqual(self.run_bootstrap(MOCK_NOT_READY="2").returncode, 0)
         self.assertEqual((self.root / "updates").read_text(), "3")
         self.assertEqual(len(self.transactions()), 1)
+
+    def test_firmware_versions_are_pinned_and_world_is_restored(self):
+        database = self.root / "lib/apk/db/installed"
+        database.parent.mkdir(parents=True)
+        database.write_text("P:kernel\nV:6.18.55-r1\n\nP:luci-base\nV:26.100\n\nP:luci-mod-status\nV:26.099\n\n")
+        world = self.root / "etc/apk/world"
+        world.parent.mkdir(parents=True)
+        world.write_text("kernel\nluci-base@custom\ncurl\n")
+        result = self.run_bootstrap(MOCK_FIRMWARE_PINS="1")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(set(world.read_text().splitlines()), {"kernel", "luci-base@custom", "curl"})
+        self.assertFalse((self.directory / "firmware-world.before").exists())
+        self.assertFalse((self.directory / "firmware-pins").exists())
+
+    def test_firmware_constraints_are_restored_when_plan_is_rejected(self):
+        database = self.root / "lib/apk/db/installed"
+        database.parent.mkdir(parents=True)
+        database.write_text("P:kernel\nV:6.18.55-r1\n\nP:luci-base\nV:26.100\n\nP:luci-mod-status\nV:26.099\n\n")
+        world = self.root / "etc/apk/world"
+        world.parent.mkdir(parents=True)
+        world.write_text("kernel\nluci-base@custom\n")
+        result = self.run_bootstrap(MOCK_FIRMWARE_PINS="1", MOCK_PLAN="(1/1) Upgrading luci-base (26.100 -> 26.200)")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.transactions())
+        self.assertEqual(set(world.read_text().splitlines()), {"kernel", "luci-base@custom"})
 
     def prepare_local_fixture(self):
         directory = self.root / "mnt/disk/restore-feed"

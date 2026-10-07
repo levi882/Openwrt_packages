@@ -463,7 +463,7 @@ fn bootstrap(jobs: &Jobs, id: &str, upper: &Path, options: &Options) -> Result<(
     if code != 0 {
         bail!("Repositories unavailable for the clean environment: {output}");
     }
-    let luci_packages = crate::luci::packages(&jobs.root, options)?;
+    let firmware_packages = crate::firmware::protected(upper)?;
     let mut arguments = vec![
         "apk",
         "--root",
@@ -475,11 +475,9 @@ fn bootstrap(jobs: &Jobs, id: &str, upper: &Path, options: &Options) -> Result<(
         "--no-commit-hooks",
         "add",
         "--upgrade",
-        "--latest",
-        "overlay-restore@myfeed>=0.2.0-r16",
-        "luci-app-overlay-restore@myfeed>=0.2.0-r19",
+        "overlay-restore@myfeed>=0.2.0-r17",
+        "luci-app-overlay-restore@myfeed>=0.2.0-r22",
     ];
-    arguments.extend(luci_packages.iter().map(String::as_str));
     for (name, argument) in [("smartdns", "smartdns@myfeed"), ("nikki", "nikki@myfeed")] {
         if options
             .myfeed_packages
@@ -489,19 +487,15 @@ fn bootstrap(jobs: &Jobs, id: &str, upper: &Path, options: &Options) -> Result<(
             arguments.push(argument);
         }
     }
-    let (code, output) = run_apk(&arguments, 600)?;
+    let (code, output) =
+        crate::firmware::transaction(upper, &arguments, |checked| run_apk(checked, 600))?;
     if code != 0 {
         bail!(
             "Unable to install recovery and DNS/proxy packages into the clean environment: {output}"
         );
     }
-    let mut verification = vec!["apk", "--root", target, "list", "--installed"];
-    verification.extend(luci_packages.iter().map(String::as_str));
-    let (code, output) = run_apk(&verification, 60)?;
-    if code != 0 {
-        bail!("Unable to verify LuCI packages in the clean environment: {output}");
-    }
-    crate::luci::verify_versions(&output, &luci_packages)?;
+    crate::firmware::verify(upper, &firmware_packages)?;
+    jobs.log(id, "Verified that clean preparation retained the firmware LuCI, kernel, modules and system libraries.")?;
     fs::remove_file(repository)?;
     // Keep the feed available for normal installs and for the bootstrap world
     // constraints. Recovery restores both entries after its transaction.
