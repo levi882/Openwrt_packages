@@ -135,7 +135,7 @@ fn required(options: &Options) -> Vec<String> {
                 .map(|p| format!("{p}@myfeed")),
         )
         .chain([
-            "overlay-restore@myfeed>=0.2.0-r13".into(),
+            "overlay-restore@myfeed>=0.2.0-r15".into(),
             "luci-app-overlay-restore@myfeed>=0.2.0-r19".into(),
         ])
         .collect()
@@ -476,7 +476,9 @@ pub fn select(jobs: &Jobs, options: &Options, myfeed: &str) -> Result<String> {
         .iter()
         .any(|p| !manifest.packages.contains(p))
     {
-        bail!("The software selection changed; prepare the local feed again");
+        bail!(
+            "The local feed no longer meets the software or recovery tool requirements; prepare it again"
+        );
     }
     Ok(snapshot)
 }

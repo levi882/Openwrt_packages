@@ -86,7 +86,7 @@ fn seed_local_feed(fixture: &mut Fixture) -> PathBuf {
         ),
     );
     let manifest = json!({"format": 1, "created": 1, "arch": "x86_64", "myfeed": fixture.options.myfeed_repo,
-        "packages": ["curl", "overlay-restore@myfeed>=0.2.0-r13", "luci-app-overlay-restore@myfeed>=0.2.0-r19"],
+        "packages": ["curl", "overlay-restore@myfeed>=0.2.0-r15", "luci-app-overlay-restore@myfeed>=0.2.0-r19"],
         "warnings": [], "files": {"curl-test.apk": util::digest_file(&store.join("cache/curl-test.apk")).unwrap(),
             "../repositories.list": util::digest_file(&store.join("repositories.list")).unwrap()}});
     save_json(&store.join("manifest.json"), &manifest).unwrap();
@@ -371,6 +371,37 @@ fn incomplete_or_changed_local_feed_blocks_migration_before_configuration_change
             .iter()
             .all(|a| !a.iter().any(|s| s == "add"))
     );
+}
+
+#[test]
+fn local_feed_with_an_older_recovery_backend_requires_refresh() {
+    let mut fixture = Fixture::new();
+    let store = seed_local_feed(&mut fixture);
+    let manifest_path = store.join("manifest.json");
+    let mut manifest: serde_json::Value = read_json(&manifest_path).unwrap();
+    for package in manifest["packages"].as_array_mut().unwrap() {
+        if package.as_str().unwrap().starts_with("overlay-restore@") {
+            *package = json!("overlay-restore@myfeed>=0.2.0-r13");
+        }
+    }
+    save_json(&manifest_path, &manifest).unwrap();
+    let system = fixture.root.join("etc/config/system");
+    write(&system, b"original");
+    let task = fixture
+        .jobs
+        .prepare(&fixture.backup, &fixture.options)
+        .unwrap();
+    let id = task["id"].as_str().unwrap();
+    fixture.jobs.worker(true).unwrap();
+    let failed = fixture.jobs.load(id).unwrap();
+    assert_eq!(failed["status"], "failed_validation");
+    assert!(
+        failed["error"]
+            .as_str()
+            .unwrap()
+            .contains("recovery tool requirements")
+    );
+    assert_eq!(fs::read(system).unwrap(), b"original");
 }
 
 #[test]
