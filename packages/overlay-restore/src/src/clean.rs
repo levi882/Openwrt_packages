@@ -473,7 +473,8 @@ fn bootstrap(jobs: &Jobs, id: &str, upper: &Path, options: &Options) -> Result<(
         "--no-scripts",
         "--no-commit-hooks",
         "add",
-        "overlay-restore@myfeed>=0.2.0-r13",
+        "--upgrade",
+        "overlay-restore@myfeed>=0.2.0-r15",
         "luci-app-overlay-restore@myfeed>=0.2.0-r19",
     ];
     for (name, argument) in [("smartdns", "smartdns@myfeed"), ("nikki", "nikki@myfeed")] {

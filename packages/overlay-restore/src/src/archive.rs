@@ -205,14 +205,13 @@ fn visit(
         {
             bail!("Conflicting archive member sizes");
         }
-        let name = attributes
-            .get("path")
-            .cloned()
-            .or(long_name.take())
-            .unwrap_or(
-                String::from_utf8(item.path_bytes().into_owned())
-                    .context("Invalid archive path encoding")?,
-            );
+        // GNU/PAX names replace the fixed header field, which may truncate UTF-8.
+        // Decode that fallback only when no complete extension name is present.
+        let name = match attributes.get("path").cloned().or_else(|| long_name.take()) {
+            Some(name) => name,
+            None => String::from_utf8(item.path_bytes().into_owned())
+                .context("Invalid archive path encoding")?,
+        };
         let name = safe_name(&name)?;
         if !name.is_empty() && !seen.insert(name.clone()) {
             bail!("Duplicate archive path: {name}");
@@ -229,13 +228,14 @@ fn visit(
         };
         let sparse = attributes.keys().any(|key| key.starts_with("GNU.sparse"));
         if kind == "link" {
-            let target = attributes
+            let target = match attributes
                 .get("linkpath")
                 .cloned()
-                .or(long_link.take())
-                .unwrap_or(String::from_utf8(
-                    item.link_name_bytes().unwrap_or_default().into_owned(),
-                )?);
+                .or_else(|| long_link.take())
+            {
+                Some(target) => target,
+                None => String::from_utf8(item.link_name_bytes().unwrap_or_default().into_owned())?,
+            };
             check_link(&name, &target)?;
         }
         attributes.clear();
