@@ -551,7 +551,9 @@ fn bootstrap(jobs: &Jobs, id: &str, upper: &Path, options: &Options) -> Result<(
     }
     copy_current(jobs, upper, "root/.ssh/authorized_keys")?;
     mkdir(&upper.join("etc/rc.d"), 0o755)?;
-    for name in ["overlay-restore", "smartdns", "nikki"] {
+    // APK hooks are disabled in the inactive root. Enable mounting before the
+    // recovery worker so its persistent local feed is available after reboot.
+    for name in ["fstab", "overlay-restore", "smartdns", "nikki"] {
         let init = upper.join("etc/init.d").join(name);
         if !init.is_file() {
             continue;
