@@ -475,8 +475,8 @@ fn bootstrap(jobs: &Jobs, id: &str, upper: &Path, options: &Options) -> Result<(
         "--no-commit-hooks",
         "add",
         "--upgrade",
-        "overlay-restore@myfeed>=0.2.0-r17",
-        "luci-app-overlay-restore@myfeed>=0.2.0-r22",
+        "overlay-restore@myfeed>=0.2.0-r18",
+        "luci-app-overlay-restore@myfeed>=0.2.0-r23",
     ];
     for (name, argument) in [("smartdns", "smartdns@myfeed"), ("nikki", "nikki@myfeed")] {
         if options

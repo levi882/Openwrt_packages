@@ -135,8 +135,8 @@ fn required(_jobs: &Jobs, options: &Options) -> Result<Vec<String>> {
                 .map(|p| format!("{p}@myfeed")),
         )
         .chain([
-            "overlay-restore@myfeed>=0.2.0-r17".into(),
-            "luci-app-overlay-restore@myfeed>=0.2.0-r22".into(),
+            "overlay-restore@myfeed>=0.2.0-r18".into(),
+            "luci-app-overlay-restore@myfeed>=0.2.0-r23".into(),
         ])
         .collect();
     Ok(packages)
@@ -353,12 +353,11 @@ fn download(jobs: &Jobs, state: &Value) -> Result<(String, Vec<String>)> {
         let mut simulation = vec!["add".into(), "--upgrade".into(), "--simulate".into()];
         simulation.extend(requests.clone());
         run(&simulation, 180)?;
-        let mut download = vec![
-            "cache".into(),
-            "download".into(),
-            "--upgrade".into(),
-            "--add-dependencies".into(),
-        ];
+        // Only firmware components are present in the seeded database, so
+        // new applications already select their latest compatible versions.
+        // Adding world would download every pinned firmware kmod; upgrading
+        // installed dependencies would discard the firmware baseline.
+        let mut download = vec!["cache".into(), "download".into()];
         download.extend(requests);
         run(&download, timeout)
     };

@@ -86,7 +86,7 @@ fn seed_local_feed(fixture: &mut Fixture) -> PathBuf {
         ),
     );
     let manifest = json!({"format": 1, "created": 1, "arch": "x86_64", "myfeed": fixture.options.myfeed_repo,
-        "packages": ["curl", "overlay-restore@myfeed>=0.2.0-r17", "luci-app-overlay-restore@myfeed>=0.2.0-r22"],
+        "packages": ["curl", "overlay-restore@myfeed>=0.2.0-r18", "luci-app-overlay-restore@myfeed>=0.2.0-r23"],
         "warnings": [], "files": {"curl-test.apk": util::digest_file(&store.join("cache/curl-test.apk")).unwrap(),
             "../repositories.list": util::digest_file(&store.join("repositories.list")).unwrap()}});
     save_json(&store.join("manifest.json"), &manifest).unwrap();
@@ -2008,7 +2008,8 @@ fn local_feed_resolves_applications_against_pinned_firmware() {
         .iter()
         .find(|args| args.iter().any(|arg| arg == "download"))
         .unwrap();
-    assert!(download.iter().any(|arg| arg == "--add-dependencies"));
+    assert!(!download.iter().any(|arg| arg == "--add-dependencies"));
+    assert!(!download.iter().any(|arg| arg == "--upgrade"));
     assert!(!download.iter().any(|arg| arg == "--available"));
     assert!(
         LUCI_CORE
