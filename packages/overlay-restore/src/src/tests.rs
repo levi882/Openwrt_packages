@@ -1027,6 +1027,65 @@ fn overlay_layout_prunes_packaged_and_runtime_files() {
 }
 
 #[test]
+fn restoring_old_banners_keeps_current_firmware_banners_in_all_layouts() {
+    for prefix in ["overlay/upper/", "upper/", ""] {
+        let fixture = Fixture::new();
+        let system_path = format!("{prefix}etc/config/system");
+        let banner_path = format!("{prefix}etc/banner");
+        let failsafe_path = format!("{prefix}etc/banner.failsafe");
+        let release_path = format!("{prefix}etc/openwrt_release");
+        backup(
+            &fixture.backup,
+            &[
+                (
+                    &system_path,
+                    b"config system\n option hostname 'restored'\n",
+                ),
+                (&banner_path, b"OpenWrt 25.12.4, r32933-4ccb782af7\n"),
+                (&failsafe_path, b"OpenWrt 25.12.4 failsafe\n"),
+                (&release_path, b"DISTRIB_RELEASE='25.12.4'\n"),
+            ],
+            0o644,
+        );
+        write(&fixture.root.join("etc/banner"), b"OpenWrt 25.12.5\n");
+        write(
+            &fixture.root.join("etc/banner.failsafe"),
+            b"Current custom failsafe banner\n",
+        );
+        write(
+            &fixture.root.join("etc/openwrt_release"),
+            b"DISTRIB_RELEASE='25.12.5'\n",
+        );
+        let id = fixture.applied();
+        let task_dir = fixture.jobs.path(&id).unwrap();
+        let plan: archive::Plan = read_json(&task_dir.join("plan.json")).unwrap();
+        assert_eq!(plan.files.len(), 1);
+        assert_eq!(plan.files[0].path, "etc/config/system");
+        assert_eq!(plan.skipped["current firmware and recovery tools"], 3);
+        for path in ["etc/banner", "etc/banner.failsafe", "etc/openwrt_release"] {
+            assert!(!task_dir.join("payload").join(path).exists());
+        }
+        assert_eq!(
+            fs::read(fixture.root.join("etc/banner")).unwrap(),
+            b"OpenWrt 25.12.5\n"
+        );
+        assert_eq!(
+            fs::read(fixture.root.join("etc/banner.failsafe")).unwrap(),
+            b"Current custom failsafe banner\n"
+        );
+        assert_eq!(
+            fs::read(fixture.root.join("etc/openwrt_release")).unwrap(),
+            b"DISTRIB_RELEASE='25.12.5'\n"
+        );
+        assert!(
+            fs::read_to_string(fixture.root.join("etc/config/system"))
+                .unwrap()
+                .contains("hostname 'restored'")
+        );
+    }
+}
+
+#[test]
 fn old_apk_database_identifies_program_ownership() {
     let fixture = Fixture::new();
     backup(

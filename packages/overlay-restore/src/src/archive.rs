@@ -380,6 +380,10 @@ fn exclusion(
     let files = [
         "etc/config/overlay_restore",
         "etc/board.json",
+        // Login banners can embed the backup firmware's version. Keep the
+        // destination's banners, just like its release metadata.
+        "etc/banner",
+        "etc/banner.failsafe",
         "etc/openwrt_release",
         "etc/openwrt_version",
         "etc/os-release",
