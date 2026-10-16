@@ -239,27 +239,27 @@
           "type": "archive",
           "format": "tar.gz",
           "url": "https://github.com/levi882/OpenWrt-nikki/releases/download/v1.26.2/nikki_x86_64-openwrt-25.12.tar.gz",
-          "sha256": "535ee055e61ea631556e47424e52a03848f932bcc8c0f8fc1f3aacbe2cb9975a",
+          "sha256": "53eae46107b28e9be26cd2da41ad5c4b01c2cde24307872faa7a51c0d5695cb6",
           "files": [
             {
-              "source": "luci-app-nikki-1.26.2-r4.apk",
-              "sha256": "4fb26bc27bc3e1f1c33d43a0f835f23df24511f1eae0b636b1e49c92d7f92865",
-              "output": "luci-app-nikki-1.26.2-r4.apk"
+              "source": "luci-app-nikki-1.26.2-r5.apk",
+              "sha256": "db5dadd2b7d516e031c76b046047459e150eb9f9bb34a5c2a4f650912a6dd9dc",
+              "output": "luci-app-nikki-1.26.2-r5.apk"
             },
             {
-              "source": "luci-i18n-nikki-zh-cn-26.276.55347~32a3026.apk",
-              "sha256": "cae1e9695163369d01f66cb34475285f7d297bdde067e2dcefaf4b9ac5b30823",
-              "output": "luci-i18n-nikki-zh-cn-26.276.55347~32a3026.apk"
+              "source": "luci-i18n-nikki-zh-cn-26.287.50886~e7af522.apk",
+              "sha256": "0b6a00250f2a1e3032d40e664e62d7998f4499db7a049630ee15569b3eea58b4",
+              "output": "luci-i18n-nikki-zh-cn-26.287.50886~e7af522.apk"
             },
             {
               "source": "mihomo-meta-1.19.32.apk",
-              "sha256": "114268bca3bdbf278ac0e690edd7df0c143a6d80c637c77ffe9903eed799c492",
+              "sha256": "743a1bf58b79d99fd25c993042cd2bf1fd5f26b3b6fe52003122dd86c9d3dc99",
               "output": "mihomo-meta-1.19.32.apk"
             },
             {
-              "source": "nikki-2026.04.08-r8.apk",
-              "sha256": "2d2621962a79db68afb4ac5c55b473680b1c7a2aac8b4ded520198b2773724a9",
-              "output": "nikki-2026.04.08-r8.apk"
+              "source": "nikki-2026.10.10-r8.apk",
+              "sha256": "c3c152670061de23187de019739e5f5a46ad8df42148e8e60d4e926d15e10f37",
+              "output": "nikki-2026.10.10-r8.apk"
             }
           ]
         }
