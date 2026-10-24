@@ -72,7 +72,8 @@ jobs:
       - name: create pull request
         if: steps.changes.outputs.changed == 'true'
         id: update_pr
-        uses: peter-evans/create-pull-request@v7
+        # v8 supports checkout v6's separate credential storage.
+        uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.AUTOMATION_TOKEN }}
           add-paths: .github/release-apks.json
