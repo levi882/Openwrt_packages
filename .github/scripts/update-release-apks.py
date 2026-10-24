@@ -128,6 +128,31 @@ def get_lucky():
     }
 
 
+def select_esa_cert_sync_assets(releases):
+    for candidate in releases:
+        match = re.fullmatch(r"esa-cert-sync-v(\d+\.\d+\.\d+-r\d+)", candidate.get("tag_name", ""))
+        if not match or candidate.get("draft") or candidate.get("prerelease"):
+            continue
+        version = match.group(1)
+        main, _ = pick_asset(candidate, re.escape(f"esa-cert-sync-{version}.apk"), "ESA certificate sync APK")
+        luci, _ = pick_asset(candidate, re.escape(f"luci-app-esa-cert-sync-{version}.apk"), "ESA certificate sync LuCI APK")
+        return candidate, main, luci, version
+    return None
+
+
+def get_esa_cert_sync():
+    selected = select_esa_cert_sync_assets(releases_list("levi882/Openwrt_packages"))
+    if selected is None:
+        raise SystemExit("No published esa-cert-sync-v* release with matching APKs found")
+    release, main, luci, version = selected
+    return {
+        "tag": release["tag_name"],
+        "version": version,
+        "main_sha": sha256(download_asset(main)),
+        "luci_sha": sha256(download_asset(luci)),
+    }
+
+
 def get_easytier():
     release = latest_release("EasyTier/luci-app-easytier")
     asset, match = pick_asset(
@@ -534,6 +559,7 @@ def build_manifest(
     rtp2httpd,
     smartdns,
     temp_status,
+    esa_cert_sync,
 ):
     packages = []
 
@@ -854,6 +880,21 @@ def build_manifest(
         }
     )
 
+    esa_repo = "levi882/Openwrt_packages"
+    esa_version = esa_cert_sync["version"]
+    packages.append(
+        {
+            "id": "esa-cert-sync",
+            "releases": [release_ref(esa_repo, esa_cert_sync["tag"])],
+            "artifacts": [
+                file_artifact(esa_repo, esa_cert_sync["tag"],
+                              f"esa-cert-sync-{esa_version}.apk", esa_cert_sync["main_sha"]),
+                file_artifact(esa_repo, esa_cert_sync["tag"],
+                              f"luci-app-esa-cert-sync-{esa_version}.apk", esa_cert_sync["luci_sha"]),
+            ],
+        }
+    )
+
     return {"schema_version": 1, "packages": packages}
 
 
@@ -870,6 +911,7 @@ def main():
     temp_status = get_temp_status()
     bandix = get_bandix()
     nikki = get_nikki()
+    esa_cert_sync = get_esa_cert_sync()
 
     write_manifest(
         build_manifest(
@@ -884,6 +926,7 @@ def main():
             rtp2httpd,
             smartdns,
             temp_status,
+            esa_cert_sync,
         )
     )
 
@@ -899,6 +942,7 @@ def main():
         ("temp-status", temp_status),
         ("Bandix", bandix),
         ("Nikki", nikki),
+        ("ESA certificate sync", esa_cert_sync),
     ]:
         if data is None:
             continue
