@@ -343,6 +343,29 @@
           "output": "luci-i18n-temp-status-zh-cn-0.apk"
         }
       ]
+    },
+    {
+      "id": "esa-cert-sync",
+      "releases": [
+        {
+          "repository": "levi882/Openwrt_packages",
+          "tag": "esa-cert-sync-v0.1.1-r2"
+        }
+      ],
+      "artifacts": [
+        {
+          "type": "file",
+          "url": "https://github.com/levi882/Openwrt_packages/releases/download/esa-cert-sync-v0.1.1-r2/esa-cert-sync-0.1.1-r2.apk",
+          "sha256": "e77d19bcd31335f629b48d803dc134fbc3014fbc683b33175db1daaabb603108",
+          "output": "esa-cert-sync-0.1.1-r2.apk"
+        },
+        {
+          "type": "file",
+          "url": "https://github.com/levi882/Openwrt_packages/releases/download/esa-cert-sync-v0.1.1-r2/luci-app-esa-cert-sync-0.1.1-r2.apk",
+          "sha256": "f6612b74c30f49252b2d25bb5d1a758d88ad64ade2750c35b7d137a1b9ff2c36",
+          "output": "luci-app-esa-cert-sync-0.1.1-r2.apk"
+        }
+      ]
     }
   ]
 }

@@ -60,7 +60,8 @@ jobs:
           python3 .github/scripts/validate-release-update.py \
             "${RUNNER_TEMP}/release-apks.before.json" \
             .github/release-apks.json \
-            --allow-added-package iptv
+            --allow-added-package iptv \
+            --allow-added-package esa-cert-sync
 
       - name: download and verify all release APKs
         if: steps.changes.outputs.changed == 'true'

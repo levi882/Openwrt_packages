@@ -10,8 +10,21 @@ https://openwrt-packages.pages.dev/openwrt-25.12/x86_64/myfeed/packages.adb
 
 It currently carries personal-use packages such as Aurora theme, Bandix,
 EasyTier, Homebox, Lucky, Nikki, rtp2httpd, SmartDNS, and temp-status plus their
-LuCI packages where available. IPTV Refresh joins automatically after its first
-tagged Release is published.
+LuCI packages where available. ESA certificate synchronization is also included
+with its LuCI page. IPTV Refresh joins automatically after its first tagged
+Release is published.
+
+ESA packages are published in this repository's `esa-cert-sync-v*` Releases.
+The release updater selects the newest published matching release and verifies
+both APK checksums. After configuring this feed, install them with:
+
+```sh
+apk update
+apk add luci-app-esa-cert-sync
+```
+
+The backend is installed as a dependency. Configure credentials and certificate
+targets under **Services → ESA 证书同步** before enabling synchronization.
 
 ## Build
 
