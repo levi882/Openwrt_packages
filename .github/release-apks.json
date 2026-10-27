@@ -39,31 +39,31 @@
       "releases": [
         {
           "repository": "timsaya/openwrt-bandix",
-          "tag": "v0.12.11"
+          "tag": "v0.12.12"
         },
         {
           "repository": "timsaya/luci-app-bandix",
-          "tag": "v0.12.12"
+          "tag": "v0.12.12-r5"
         }
       ],
       "artifacts": [
         {
           "type": "file",
-          "url": "https://github.com/timsaya/openwrt-bandix/releases/download/v0.12.11/bandix-0.12.11-r1_x86_64.apk",
-          "sha256": "1ede36d2c63bb13ea35550c1b73a7296c65f7bbe851e06a587f93b30ceceae3b",
-          "output": "bandix-0.12.11-r1.apk"
+          "url": "https://github.com/timsaya/openwrt-bandix/releases/download/v0.12.12/bandix-0.12.12-r1_x86_64.apk",
+          "sha256": "a54eb38388762fdacd93148897bc5e308070ca0837d920b0c138bfe2cce173de",
+          "output": "bandix-0.12.12-r1.apk"
         },
         {
           "type": "file",
-          "url": "https://github.com/timsaya/luci-app-bandix/releases/download/v0.12.12/luci-app-bandix-0.12.12-r1_all.apk",
-          "sha256": "bba029a07618ab738ad5f3a27d54e29df6e9583d9f3f594334a727db48a52feb",
-          "output": "luci-app-bandix-0.12.12-r1.apk"
+          "url": "https://github.com/timsaya/luci-app-bandix/releases/download/v0.12.12-r5/luci-app-bandix-0.12.12-r5_all.apk",
+          "sha256": "c685e2a1a9fba219ff9837efe9fc5f6bdc0f6ec0f694ecd462774d27cce0c2b3",
+          "output": "luci-app-bandix-0.12.12-r5.apk"
         },
         {
           "type": "file",
-          "url": "https://github.com/timsaya/luci-app-bandix/releases/download/v0.12.12/luci-i18n-bandix-zh-cn-26.271.52516.159a6de_all.apk",
-          "sha256": "cb55b6c6831d163051b59199ed72faad9cbfc4545d7df37b632c8e4cb63b4142",
-          "output": "luci-i18n-bandix-zh-cn-26.271.52516~159a6de.apk"
+          "url": "https://github.com/timsaya/luci-app-bandix/releases/download/v0.12.12-r5/luci-i18n-bandix-zh-cn-26.300.03255.108369b-r5_all.apk",
+          "sha256": "0dfe8b87f1f20771d8bced79c65507a86ace837edebcfea5058b78f7b2a2bd84",
+          "output": "luci-i18n-bandix-zh-cn-26.300.03255.108369b-r5.apk"
         }
       ]
     },
