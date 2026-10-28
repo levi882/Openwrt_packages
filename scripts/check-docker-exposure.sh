@@ -8,6 +8,7 @@ sh -n packages/docker-guard/files/usr/libexec/docker-guard-setup
 sh -n packages/docker-guard/files/etc/init.d/docker-guard
 sh -n packages/luci-app-docker-exposure/root/usr/libexec/rpcd/docker-exposure
 node --check packages/luci-app-docker-exposure/htdocs/luci-static/resources/view/docker-exposure/overview.js
+node scripts/test-docker-exposure-view.js
 bash -n scripts/build-local-apks.sh
 python3 scripts/test-docker-guard-setup.py
 
