@@ -1,0 +1,8 @@
+{
+  "admin/services/docker-exposure": {
+    "title": "Docker 端口访问控制",
+    "order": 60,
+    "action": { "type": "view", "path": "docker-exposure/overview" },
+    "depends": { "acl": ["luci-app-docker-exposure"] }
+  }
+}

@@ -54,8 +54,9 @@ Push to `main`, or run the `build-feed` workflow manually. The
 URLs, output filenames, archive members, and SHA256 checksums consumed by the
 generic downloader.
 
-The build also compiles the local `overlay-restore` backend and
-`luci-app-overlay-restore` frontend in `packages/` before signing the feed index.
+The build also compiles the local `overlay-restore`, `luci-app-overlay-restore`,
+`docker-guard` and `luci-app-docker-exposure` packages in `packages/` before
+signing the feed index.
 The backend uses pinned stable Rust 1.99.0 and produces a static x86_64 musl
 executable; the LuCI frontend uses JavaScript. Python is not required on the router.
 
@@ -106,3 +107,55 @@ failed package/service work.
 
 Local development APKs have not been published by merely building
 them; publishing still follows the normal feed workflow.
+
+## Docker Port Access Control
+
+After publishing the local packages through the feed workflow:
+
+```sh
+apk update
+apk add luci-app-docker-exposure
+```
+
+The `docker-guard` backend is installed as a dependency. Open
+**Services → Docker 端口访问控制** to choose **阻止 WAN / 允许 WAN** for a
+configured container, inspect its host-to-container port mappings and actual
+rule coverage, then apply pending changes. Host-network containers and
+containers without published ports are listed separately. The page refreshes
+read-only status every 15 seconds.
+
+The backend preserves `/etc/config/docker_exposure` on upgrades. Installation
+and service startup register currently running containers that are not yet
+configured, using `settings.default_mode` (`lan` by default), and install one
+minute-based check job without removing other cron tasks. Existing per-container
+choices are retained. Generated port rules are not embedded in the package;
+the last generated fw4 include is retained for sysupgrade. The package does not
+reload fw4 or restart Docker during installation.
+
+This packages the current guard implementation rather than redesigning it:
+
+- Discovery runs at package installation and guard service startup. A container
+  added later is marked **尚未纳入管理** until it is registered; running
+  `/usr/libexec/docker-guard-setup` followed by `/usr/bin/docker-guard apply`
+  registers current containers and applies their policies.
+- The guard's periodic check still compares rule counts. The LuCI status API
+  separately checks current port/protocol/interface coverage and exposes missing
+  or partial rules. Content-based automatic repair remains future work.
+- The guard uses the first IPv4 default-route interface, falls back to
+  `pppoe-wan`, and does not yet implement a configurable WAN interface list.
+  Review this behavior before deploying on a different or multi-WAN router.
+- No port exceptions are bundled. If needed, add a local UCI list named
+  `exempt_ports` under `docker_exposure.settings`; the guard and page read the
+  same list. Selecting **阻止 WAN** does not override configured exceptions.
+  Loaded rules are not a substitute for external IPv4/IPv6 testing.
+- Removing the package stops automatic synchronization but retains the generated
+  include and existing kernel rules. Remove those only after arranging the
+  desired replacement access policy.
+
+Validate sources with `bash scripts/check-docker-exposure.sh`. To build only
+these two packages with an existing OpenWrt SDK, without the recovery Rust build:
+
+```sh
+LOCAL_PACKAGES='docker-guard luci-app-docker-exposure' \
+SDK_DIR=/path/to/openwrt-sdk bash scripts/build-local-apks.sh
+```

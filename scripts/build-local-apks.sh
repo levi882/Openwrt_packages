@@ -8,10 +8,24 @@ output_abs="$(realpath "$output_dir")"
 
 build_in_sdk() {
     local sdk_root="$1" source_root="$2" destination="$3"
+    local -a package_names clean_targets compile_targets rust_make_args
+    read -r -a package_names <<< "${LOCAL_PACKAGES:-overlay-restore luci-app-overlay-restore docker-guard luci-app-docker-exposure}"
+    local name build_rust=0
+    for name in "${package_names[@]}"; do
+        case "$name" in
+            overlay-restore) build_rust=1 ;;
+            luci-app-overlay-restore|docker-guard|luci-app-docker-exposure) ;;
+            *) echo "Unsupported local package: $name" >&2; return 1 ;;
+        esac
+    done
     export RESTORE_SOURCE_ROOT="$source_root"
-    export RESTORE_RUST_ROOT="${RESTORE_RUST_ROOT:-$sdk_root/.restore-rust}"
-    source "$source_root/scripts/setup-restore-rust.sh"
-    cargo fetch --locked --manifest-path "$source_root/packages/overlay-restore/src/Cargo.toml" --target x86_64-unknown-linux-musl
+    rust_make_args=()
+    if [ "$build_rust" = 1 ]; then
+        export RESTORE_RUST_ROOT="${RESTORE_RUST_ROOT:-$sdk_root/.restore-rust}"
+        source "$source_root/scripts/setup-restore-rust.sh"
+        cargo fetch --locked --manifest-path "$source_root/packages/overlay-restore/src/Cargo.toml" --target x86_64-unknown-linux-musl
+        rust_make_args=(OVERLAY_RESTORE_CARGO="$OVERLAY_RESTORE_CARGO" OVERLAY_RESTORE_RUSTC="$OVERLAY_RESTORE_RUSTC" OVERLAY_RESTORE_CARGO_HOME="$OVERLAY_RESTORE_CARGO_HOME")
+    fi
     cd "$sdk_root"
     local build_log="${RESTORE_BUILD_LOG:-$sdk_root/logs/overlay-restore-local.log}"
     mkdir -p "$(dirname "$build_log")"
@@ -25,29 +39,31 @@ build_in_sdk() {
         return 1
     fi
     mkdir -p package/local
-    for name in overlay-restore luci-app-overlay-restore; do
+    clean_targets=()
+    compile_targets=()
+    for name in "${package_names[@]}"; do
         mkdir -p "package/local/$name"
         rsync -a --delete --exclude='__pycache__' --exclude='target' "$source_root/packages/$name/" "package/local/$name/"
+        printf '\nCONFIG_PACKAGE_%s=m\n' "$name" >> .config
+        clean_targets+=("package/local/$name/clean")
+        compile_targets+=("package/local/$name/compile")
     done
-    printf '\nCONFIG_PACKAGE_overlay-restore=m\nCONFIG_PACKAGE_luci-app-overlay-restore=m\n' >> .config
     make defconfig >> "$build_log" 2>&1
-    make NO_DEPS=1 package/local/overlay-restore/clean package/local/luci-app-overlay-restore/clean >> "$build_log" 2>&1
+    make NO_DEPS=1 "${clean_targets[@]}" >> "$build_log" 2>&1
     # Rust and its locked dependencies are prepared above. Runtime dependencies
     # are supplied by firmware feeds rather than rebuilt in this SDK invocation.
     if ! make -j"${RESTORE_BUILD_JOBS:-2}" NO_DEPS=1 \
-        OVERLAY_RESTORE_CARGO="$OVERLAY_RESTORE_CARGO" OVERLAY_RESTORE_RUSTC="$OVERLAY_RESTORE_RUSTC" \
-        OVERLAY_RESTORE_CARGO_HOME="$OVERLAY_RESTORE_CARGO_HOME" \
-        package/local/overlay-restore/compile package/local/luci-app-overlay-restore/compile V=s >> "$build_log" 2>&1; then
+        "${rust_make_args[@]}" "${compile_targets[@]}" V=s >> "$build_log" 2>&1; then
         tail -n 80 "$build_log"
         return 1
     fi
     echo "SDK package build completed; log: $build_log"
     # Publish only this build's package versions, retaining unrelated feed APKs.
-    find "$destination" -maxdepth 1 -type f \( -name 'overlay-restore-*.apk' -o -name 'luci-app-overlay-restore-*.apk' \) -delete
-    find bin/packages -type f \( -name 'overlay-restore-*.apk' -o -name 'luci-app-overlay-restore-*.apk' \) \
-        -exec cp '{}' "$destination/" \;
-    test -n "$(find "$destination" -maxdepth 1 -name 'overlay-restore-*.apk' -print -quit)"
-    test -n "$(find "$destination" -maxdepth 1 -name 'luci-app-overlay-restore-*.apk' -print -quit)"
+    for name in "${package_names[@]}"; do
+        find "$destination" -maxdepth 1 -type f -name "$name-*.apk" -delete
+        find bin/packages -type f -name "$name-*.apk" -exec cp '{}' "$destination/" \;
+        test -n "$(find "$destination" -maxdepth 1 -name "$name-*.apk" -print -quit)"
+    done
 }
 
 if [ -n "${SDK_DIR:-}" ]; then
@@ -61,6 +77,7 @@ else
     export -f build_in_sdk
     docker pull "$sdk_image"
     docker run --rm --user 0:0 --entrypoint /bin/bash \
+        -e LOCAL_PACKAGES="${LOCAL_PACKAGES:-overlay-restore luci-app-overlay-restore docker-guard luci-app-docker-exposure}" \
         -v "$repo_root:/repo:ro" -v "$(realpath "$cache_dir"):/sdk-cache" -v "$output_abs:/output" \
         -v "$script_abs:/build-local-apks.sh:ro" "$sdk_image" -lc '
             set -euo pipefail

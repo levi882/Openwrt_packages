@@ -1,0 +1,3 @@
+config settings 'settings'
+	option default_mode 'lan'
+	# Optional local port exceptions belong in list exempt_ports entries here.

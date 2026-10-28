@@ -11,4 +11,6 @@ Makefile text eol=lf
 Cargo.lock text eol=lf
 packages/overlay-restore/files/** text eol=lf
 packages/luci-app-overlay-restore/root/usr/libexec/rpcd/* text eol=lf
+packages/docker-guard/files/** text eol=lf
+packages/luci-app-docker-exposure/root/** text eol=lf
 

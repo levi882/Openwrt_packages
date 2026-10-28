@@ -1,0 +1,44 @@
+#!/bin/sh
+# Package/startup setup. Never import host addresses or generated port rules.
+set -eu
+
+case "${1:-}" in
+    ''|--remove-cron) ;;
+    *) echo 'usage: docker-guard-setup [--remove-cron]' >&2; exit 1 ;;
+esac
+
+if [ "${1:-}" != --remove-cron ]; then
+    mode=$(uci -q get docker_exposure.settings.default_mode 2>/dev/null || echo lan)
+    case "$mode" in lan|wan) ;; *) mode=lan ;; esac
+    if names=$(docker ps --format '{{.Names}}' 2>/dev/null); then
+        changed=0
+        for name in $names; do
+            found=0
+            for section in $(uci show docker_exposure 2>/dev/null | sed -n 's/^docker_exposure\.\([^.=]*\)=container$/\1/p'); do
+                if [ "$(uci -q get "docker_exposure.$section.name")" = "$name" ]; then
+                    found=1
+                    break
+                fi
+            done
+            [ "$found" = 0 ] || continue
+            section=$(uci add docker_exposure container)
+            uci set "docker_exposure.$section.name=$name"
+            uci set "docker_exposure.$section.mode=$mode"
+            changed=1
+        done
+        [ "$changed" = 0 ] || uci commit docker_exposure
+    else
+        logger -t docker-guard 'startup discovery skipped: Docker API unavailable; existing configuration and rules retained'
+    fi
+fi
+
+cron_tmp=$(mktemp /tmp/docker-guard-cron.XXXXXX)
+trap 'rm -f "$cron_tmp"' EXIT HUP INT TERM
+# Remove only the exact guard check job; preserve all other scheduled work.
+{ crontab -l 2>/dev/null || true; } | awk '
+    $0 !~ /^[[:space:]]*\*[[:space:]]+\*[[:space:]]+\*[[:space:]]+\*[[:space:]]+\*[[:space:]]+(\/usr\/bin\/)?docker-guard[[:space:]]+check([[:space:]]*(#.*)?)?$/
+' > "$cron_tmp"
+if [ "${1:-}" != --remove-cron ]; then
+    printf '%s\n' '* * * * * /usr/bin/docker-guard check' >> "$cron_tmp"
+fi
+crontab "$cron_tmp"
