@@ -1,0 +1,198 @@
+#!/bin/sh
+. /usr/share/libubox/jshn.sh
+
+GUARD=/usr/bin/docker-guard
+# Use the same local-only exception list as the guard; no bundled port list.
+WHITELIST="$(uci -q get docker_exposure.settings.exempt_ports 2>/dev/null || true)"
+
+wan_iface() {
+    i=$(ip -4 route show default 2>/dev/null | awk '/^default/{print $5; exit}')
+    [ -n "${i:-}" ] || i=pppoe-wan
+    echo "$i"
+}
+
+mode_of() {
+    uci -q get "docker_exposure.$1.mode" 2>/dev/null || echo lan
+}
+
+sec_of() {
+    for section in $(uci show docker_exposure 2>/dev/null | sed -n 's/^docker_exposure\.\([^.=]*\)=container$/\1/p'); do
+        [ "$(uci -q get "docker_exposure.$section.name")" = "$1" ] || continue
+        echo "$section"
+        return
+    done
+}
+
+in_whitelist() {
+    case " $WHITELIST " in *" $1 "*) return 0 ;; esac
+    return 1
+}
+
+# Check the exact rule shape emitted by the current guard. Extra restrictions
+# or an unfamiliar format are deliberately reported as unverified.
+matching_packets() {
+    printf '%s\n' "$runtime" | awk -v iface="$wan" -v port="$1" -v proto="$2" '
+        $1 == "iifname" && $2 == "\"" iface "\"" &&
+        $3 == proto && $4 == "dport" && $5 == port &&
+        $6 == "counter" && $7 == "packets" && $9 == "bytes" &&
+        $11 == "drop" && $12 == "comment" && $13 ~ /^"guard_/ {
+            count += $8; found = 1
+        }
+        END { if (found) print count }
+    '
+}
+
+do_list() {
+    wan=$(wan_iface)
+    runtime=$(nft -n list chain inet fw4 docker_guard_pre 2>/dev/null)
+    chain_ok=0
+    printf '%s\n' "$runtime" | grep -Eq 'type filter hook prerouting priority (raw|-300);' && chain_ok=1
+    names=$(docker ps --format '{{.Names}}' 2>/dev/null)
+    names_rc=$?
+    api=ok
+    [ "$names_rc" = 0 ] || api=unavailable
+    runtime_count=$(printf '%s\n' "$runtime" | grep -c 'comment "guard_')
+    persist_count=$(awk '/drop comment/ { n++ } END { print n+0 }' /etc/nftables.d/20-docker-guard.nft 2>/dev/null)
+
+    json_init
+    json_add_array containers
+    for c in $(printf '%s\n' "$names" | sort); do
+        net=$(docker inspect "$c" --format '{{.HostConfig.NetworkMode}}' 2>/dev/null)
+        inspect_ok=1
+        [ -n "$net" ] || { net=unknown; inspect_ok=0; api=partial; }
+        sec=$(sec_of "$c")
+        mode=$(mode_of "$sec")
+        items=$(docker inspect "$c" --format '{{range $p, $b := .NetworkSettings.Ports}}{{range $b}}{{.HostIp}}|{{.HostPort}}|{{$p}} {{end}}{{end}}' 2>/dev/null)
+        [ "$?" = 0 ] || { inspect_ok=0; api=partial; }
+
+        json_add_object
+        json_add_string name "$c"
+        json_add_string network "$net"
+        json_add_string mode "$mode"
+        if [ -n "$sec" ]; then json_add_boolean configured 1; else json_add_boolean configured 0; fi
+
+        json_add_array bindings
+        for item in $items; do
+            host_ip=${item%%|*}
+            rest=${item#*|}
+            host_port=${rest%%|*}
+            spec=${rest#*|}
+            json_add_object
+            json_add_string host_ip "$host_ip"
+            json_add_string host_port "$host_port"
+            json_add_string container_port "${spec%/*}"
+            json_add_string protocol "${spec##*/}"
+            json_close_object
+        done
+        json_close_array
+
+        json_add_array ports
+        seen=" "
+        total=0
+        covered=0
+        conflicts=0
+        packets=0
+        for item in $items; do
+            rest=${item#*|}
+            port=${rest%%|*}
+            spec=${rest#*|}
+            proto=${spec##*/}
+            case "$port" in ''|*[!0-9]*) continue ;; esac
+            case "$seen" in *" $port/$proto "*) continue ;; esac
+            seen="$seen$port/$proto "
+            total=$((total + 1))
+            json_add_string "" "$port/$proto"
+            in_whitelist "$port" && conflicts=$((conflicts + 1))
+            if [ "$chain_ok" = 1 ]; then
+                matched=$(matching_packets "$port" "$proto")
+                if [ -n "$matched" ]; then
+                    covered=$((covered + 1))
+                    packets=$((packets + matched))
+                fi
+            fi
+        done
+        json_close_array
+
+        if [ "$inspect_ok" != 1 ]; then state=unknown
+        elif [ "$net" = host ]; then state=unmanaged
+        elif [ "$total" = 0 ]; then state=unpublished
+        elif [ -z "$sec" ]; then state=unconfigured
+        elif [ "$mode" = wan ]; then
+            if [ "$covered" = 0 ]; then state=allowed; else state=mismatch; fi
+        elif [ "$conflicts" -gt 0 ]; then state=exception
+        elif [ "$covered" = "$total" ]; then state=guarded
+        elif [ "$covered" -gt 0 ]; then state=partial
+        else state=missing
+        fi
+        json_add_string state "$state"
+        json_add_int total_ports "$total"
+        json_add_int covered_ports "$covered"
+        json_add_int exception_ports "$conflicts"
+        json_add_int blocked_packets "$packets"
+        json_close_object
+    done
+    json_close_array
+
+    json_add_object status
+    json_add_string chain docker_guard_pre
+    json_add_string wan_iface "$wan"
+    json_add_string runtime_rules "${runtime_count:-0}"
+    json_add_string persist_rules "${persist_count:-0}"
+    json_add_boolean chain_valid "$chain_ok"
+    json_add_string docker_api "$api"
+    json_add_string service "$(ubus call service list '{"name":"docker-guard"}' 2>/dev/null | grep -q '"running": true' && echo running || echo stopped)"
+    json_close_object
+    json_add_string whitelist "$WHITELIST"
+    json_dump
+}
+
+do_set_mode() {
+    read -r input
+    json_load "$input"
+    json_get_var name name
+    json_get_var mode mode
+    case "$mode" in lan|wan) ;; *)
+        json_init; json_add_boolean ok 0; json_add_string error "invalid mode"; json_dump; return 1 ;;
+    esac
+    sec=$(sec_of "$name")
+    if [ -z "$sec" ]; then
+        json_init; json_add_boolean ok 0; json_add_string error "container not in config"; json_dump; return 1
+    fi
+    if ! uci set "docker_exposure.$sec.mode=$mode" || ! uci commit docker_exposure; then
+        json_init; json_add_boolean ok 0; json_add_string error "configuration save failed"; json_dump; return 1
+    fi
+    json_init; json_add_boolean ok 1; json_add_string name "$name"; json_add_string mode "$mode"; json_dump
+}
+
+do_apply() {
+    if "$GUARD" apply >/dev/null 2>&1; then
+        json_init; json_add_boolean ok 1
+        json_add_string rules "$(nft list chain inet fw4 docker_guard_pre 2>/dev/null | grep -c 'comment "guard_')"
+        json_dump
+    else
+        json_init; json_add_boolean ok 0; json_add_string error "guard apply failed"; json_dump
+        return 1
+    fi
+}
+
+do_status() {
+    json_init
+    json_add_string chain docker_guard_pre
+    json_add_string wan_iface "$(wan_iface)"
+    json_add_string runtime_rules "$(nft list chain inet fw4 docker_guard_pre 2>/dev/null | grep -c 'comment "guard_')"
+    json_add_string docker_api "$(docker ps >/dev/null 2>&1 && echo ok || echo unavailable)"
+    json_dump
+}
+
+case "$1" in
+    list) echo '{"list":{},"status":{},"set_mode":{"name":"str","mode":"str"},"apply":{}}' ;;
+    call)
+        case "$2" in
+            list) do_list ;;
+            status) do_status ;;
+            set_mode) do_set_mode ;;
+            apply) do_apply ;;
+            *) json_init; json_add_string error "unknown method"; json_dump; exit 1 ;;
+        esac ;;
+    *) exit 1 ;;
+esac

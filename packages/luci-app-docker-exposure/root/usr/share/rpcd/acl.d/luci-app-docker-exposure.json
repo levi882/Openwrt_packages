@@ -1,0 +1,7 @@
+{
+  "luci-app-docker-exposure": {
+    "description": "Docker port exposure control",
+    "read": { "ubus": { "docker-exposure": ["list", "status"] } },
+    "write": { "ubus": { "docker-exposure": ["set_mode", "apply"] } }
+  }
+}
