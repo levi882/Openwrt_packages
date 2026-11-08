@@ -9,6 +9,7 @@ import tarfile
 import tempfile
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import zipfile
 from pathlib import Path, PurePosixPath
@@ -118,12 +119,34 @@ def file_sha256(path):
     return digest.hexdigest()
 
 
+def github_asset_api_url(url):
+    parsed = urllib.parse.urlsplit(url)
+    match = re.fullmatch(r"/([^/]+)/([^/]+)/releases/download/([^/]+)/([^/]+)", parsed.path)
+    if parsed.scheme != "https" or parsed.hostname != "github.com" or not match:
+        return None
+    owner, repo, tag, filename = match.groups()
+    api_url = f"https://api.github.com/repos/{owner}/{repo}/releases/tags/{tag}"
+    request = urllib.request.Request(api_url, headers={
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "openwrt-packages-manifest-downloader",
+    })
+    with urllib.request.urlopen(request, timeout=180) as response:
+        release = json.load(response)
+    for asset in release.get("assets", []):
+        if asset.get("name") == urllib.parse.unquote(filename):
+            asset_url = asset.get("url", "")
+            if asset_url.startswith(f"https://api.github.com/repos/{owner}/{repo}/releases/assets/"):
+                return asset_url
+    return None
+
+
 def download(url, destination, expected_sha256):
     request = urllib.request.Request(
         url,
         headers={"User-Agent": "openwrt-packages-manifest-downloader"},
     )
     last_error = None
+    used_api = False
 
     for attempt in range(1, 4):
         try:
@@ -140,6 +163,19 @@ def download(url, destination, expected_sha256):
             last_error = exc
             destination.unlink(missing_ok=True)
             if attempt < 3:
+                if isinstance(exc, urllib.error.HTTPError) and exc.code in (502, 503, 504) and not used_api:
+                    try:
+                        api_url = github_asset_api_url(url)
+                    except (urllib.error.URLError, TimeoutError, OSError, ValueError) as lookup_error:
+                        print(f"GitHub asset API lookup failed: {lookup_error}")
+                        api_url = None
+                    if api_url:
+                        request = urllib.request.Request(api_url, headers={
+                            "Accept": "application/octet-stream",
+                            "User-Agent": "openwrt-packages-manifest-downloader",
+                        })
+                        used_api = True
+                        print(f"Using GitHub asset API for {destination.name}")
                 print(f"Download attempt {attempt}/3 failed: {exc}; retrying...")
                 time.sleep(2)
 

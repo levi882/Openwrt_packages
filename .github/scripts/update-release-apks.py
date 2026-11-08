@@ -6,7 +6,9 @@ import os
 import re
 import sys
 import tarfile
+import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -17,17 +19,28 @@ MANIFEST = ROOT / ".github" / "release-apks.json"
 TOKEN = os.environ.get("GITHUB_TOKEN")
 
 
-def github_request(url):
+def github_request(url, accept="application/vnd.github+json"):
     headers = {
-        "Accept": "application/vnd.github+json",
+        "Accept": accept,
         "User-Agent": "openwrt-packages-release-updater",
         "X-GitHub-Api-Version": "2022-11-28",
     }
-    if TOKEN and "api.github.com" in url:
+    if TOKEN and urllib.parse.urlsplit(url).hostname == "api.github.com":
         headers["Authorization"] = f"Bearer {TOKEN}"
     req = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(req, timeout=180) as response:
-        return response.read()
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(req, timeout=180) as response:
+                return response.read()
+        except urllib.error.HTTPError as exc:
+            if exc.code not in (429, 500, 502, 503, 504) or attempt == 2:
+                raise
+            exc.close()
+        except (urllib.error.URLError, TimeoutError):
+            if attempt == 2:
+                raise
+        print(f"Request failed for {url}; retrying ({attempt + 1}/2)", file=sys.stderr)
+        time.sleep(2 ** attempt)
 
 
 def latest_release(repo):
@@ -45,7 +58,14 @@ def sha256(data):
 
 
 def download_asset(asset):
-    return github_request(asset["browser_download_url"])
+    try:
+        return github_request(asset["browser_download_url"])
+    except urllib.error.HTTPError as exc:
+        if exc.code not in (502, 503, 504) or not asset.get("url"):
+            raise
+        exc.close()
+        print(f"Using GitHub asset API for {asset['name']}", file=sys.stderr)
+        return github_request(asset["url"], accept="application/octet-stream")
 
 
 def pick_asset(release, pattern, label):

@@ -19,6 +19,16 @@ jobs:
     timeout-minutes: 45
 
     steps:
+      - name: validate automation token
+        env:
+          GH_TOKEN: ${{ secrets.AUTOMATION_TOKEN }}
+        run: |
+          if [ -z "${GH_TOKEN}" ]; then
+            echo "::error::AUTOMATION_TOKEN is missing or empty"
+            exit 1
+          fi
+          gh api user --silent
+
       - name: checkout
         uses: actions/checkout@v6
 
