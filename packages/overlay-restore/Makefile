@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=overlay-restore
 PKG_VERSION:=0.2.0
-PKG_RELEASE:=19
+PKG_RELEASE:=20
 PKG_LICENSE:=MIT
 
 OVERLAY_RESTORE_CARGO?=cargo
@@ -48,7 +48,10 @@ endef
 define Package/overlay-restore/postinst
 #!/bin/sh
 if [ -z "$${IPKG_INSTROOT}" ]; then
-	/usr/libexec/overlay-restore-bootstrap setup >/dev/null 2>&1 || true
+	if ! /usr/libexec/overlay-restore-bootstrap setup; then
+		logger -p daemon.err -t overlay-restore-bootstrap 'Unable to retain recovery bootstrap files.'
+		exit 1
+	fi
 	/etc/init.d/overlay-restore enable
 	/etc/init.d/overlay-restore restart >/dev/null 2>&1 || true
 fi

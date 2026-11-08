@@ -135,7 +135,7 @@ fn required(_jobs: &Jobs, options: &Options) -> Result<Vec<String>> {
                 .map(|p| format!("{p}@myfeed")),
         )
         .chain([
-            "overlay-restore@myfeed>=0.2.0-r18".into(),
+            "overlay-restore@myfeed>=0.2.0-r20".into(),
             "luci-app-overlay-restore@myfeed>=0.2.0-r23".into(),
         ])
         .collect();

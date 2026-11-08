@@ -4,3 +4,4 @@
 /etc/rc.d/S99overlay-restore-bootstrap
 /etc/apk/repositories.d/00-myfeed.list
 /lib/upgrade/keep.d/overlay-restore-bootstrap
+/lib/upgrade/zz-overlay-restore.sh

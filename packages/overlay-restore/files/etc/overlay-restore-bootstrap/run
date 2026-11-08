@@ -121,6 +121,9 @@ log() {
 }
 
 setup() {
+    [ ! -L "$bootstrap_dir" ] || return 1
+    mkdir -p "$bootstrap_dir" || return 1
+    chmod 0700 "$bootstrap_dir" || return 1
     # APK protects retained /etc files. Use the installed package's resources
     # so an older retained script cannot override a newly installed bootstrap.
     for resource in run init myfeed.pem; do
@@ -131,6 +134,7 @@ setup() {
         [ ! -s "$source" ] || cp "$source" "$bootstrap_dir/$resource" || return 1
     done
     [ -s "$bootstrap_dir/run" ] && [ -s "$bootstrap_dir/init" ] && [ -s "$bootstrap_dir/myfeed.pem" ] || return 1
+    /bin/sh -n "$bootstrap_dir/run" && /bin/sh -n "$bootstrap_dir/init" || return 1
     mkdir -p "$bootstrap_root/etc/init.d" || return 1
     # These generated copies survive installing an older tool from local cache.
     cp "$bootstrap_dir/run" "$bootstrap_dir/runner.tmp.$$" &&
@@ -139,6 +143,9 @@ setup() {
     cp "$bootstrap_dir/init" "$bootstrap_dir/runner-init.tmp.$$" &&
         mv "$bootstrap_dir/runner-init.tmp.$$" "$bootstrap_dir/runner-init" || return 1
     restore_hook || return 1
+    (cd "$bootstrap_dir" && sha256sum run init myfeed.pem runner runner-init) > "$bootstrap_dir/files.sha256.tmp.$$" &&
+        chmod 0600 "$bootstrap_dir/files.sha256.tmp.$$" &&
+        mv "$bootstrap_dir/files.sha256.tmp.$$" "$bootstrap_dir/files.sha256" || return 1
     if [ ! -e "$bootstrap_dir/firmware.checked" ]; then
         fingerprint=$(firmware_fingerprint) || return 1
         printf '%s\n' "$fingerprint" > "$bootstrap_dir/firmware.checked" || return 1

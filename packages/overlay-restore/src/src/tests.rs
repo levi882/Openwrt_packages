@@ -86,7 +86,7 @@ fn seed_local_feed(fixture: &mut Fixture) -> PathBuf {
         ),
     );
     let manifest = json!({"format": 1, "created": 1, "arch": "x86_64", "myfeed": fixture.options.myfeed_repo,
-        "packages": ["curl", "overlay-restore@myfeed>=0.2.0-r18", "luci-app-overlay-restore@myfeed>=0.2.0-r23"],
+        "packages": ["curl", "overlay-restore@myfeed>=0.2.0-r20", "luci-app-overlay-restore@myfeed>=0.2.0-r23"],
         "warnings": [], "files": {"curl-test.apk": util::digest_file(&store.join("cache/curl-test.apk")).unwrap(),
             "../repositories.list": util::digest_file(&store.join("repositories.list")).unwrap()}});
     save_json(&store.join("manifest.json"), &manifest).unwrap();
