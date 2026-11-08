@@ -50,9 +50,13 @@ docker run --rm \
     apk_bin=/sdk-cache/staging_dir/host/bin/apk
 
     if [ ! -x "$apk_bin" ]; then
-      echo "OpenWrt SDK cache miss, running setup.sh..."
+      echo "OpenWrt SDK cache miss, preparing SDK..."
       cd /sdk-cache
-      bash /builder/setup.sh
+      if [ -f /builder/rules.mk ]; then
+        cp -a /builder/. /sdk-cache/
+      else
+        bash /builder/setup.sh
+      fi
     else
       echo "OpenWrt SDK cache hit: $apk_bin"
     fi
