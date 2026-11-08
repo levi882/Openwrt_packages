@@ -148,29 +148,32 @@ def get_lucky():
     }
 
 
-def select_esa_cert_sync_assets(releases):
-    for candidate in releases:
-        match = re.fullmatch(r"esa-cert-sync-v(\d+\.\d+\.\d+-r\d+)", candidate.get("tag_name", ""))
-        if not match or candidate.get("draft") or candidate.get("prerelease"):
-            continue
-        version = match.group(1)
-        main, _ = pick_asset(candidate, re.escape(f"esa-cert-sync-{version}.apk"), "ESA certificate sync APK")
-        luci, _ = pick_asset(candidate, re.escape(f"luci-app-esa-cert-sync-{version}.apk"), "ESA certificate sync LuCI APK")
-        return candidate, main, luci, version
-    return None
-
-
 def get_esa_cert_sync():
-    selected = select_esa_cert_sync_assets(releases_list("levi882/Openwrt_packages"))
-    if selected is None:
-        raise SystemExit("No published esa-cert-sync-v* release with matching APKs found")
-    release, main, luci, version = selected
-    return {
-        "tag": release["tag_name"],
-        "version": version,
-        "main_sha": sha256(download_asset(main)),
-        "luci_sha": sha256(download_asset(luci)),
-    }
+    package = next((p for p in read_manifest().get("packages", [])
+                    if p.get("id") == "esa-cert-sync"), None)
+    if package is None:
+        raise SystemExit("Missing feed-only ESA package group")
+    metadata = package.get("metadata", {})
+    version = metadata.get("version", "")
+    source_commit = metadata.get("source_commit", "")
+    if (metadata.get("distribution") != "feed-only"
+            or not re.fullmatch(r"\d+\.\d+\.\d+-r\d+", version)
+            or not re.fullmatch(r"[0-9a-f]{40}", source_commit)):
+        raise SystemExit("Invalid feed-only ESA metadata")
+    artifacts = package.get("artifacts", [])
+    expected = {f"esa-cert-sync-{version}.apk", f"luci-app-esa-cert-sync-{version}.apk"}
+    if len(artifacts) != 2 or {a.get("output") for a in artifacts} != expected:
+        raise SystemExit("Feed-only ESA must include both backend and LuCI APKs")
+    for artifact in artifacts:
+        name = artifact["output"]
+        source_url = (f"https://raw.githubusercontent.com/levi882/Openwrt_packages/"
+                      f"{source_commit}/prebuilt/esa-cert-sync/{name}")
+        if artifact.get("type") != "file" or artifact.get("url") != source_url:
+            raise SystemExit(f"ESA source must be pinned to its source commit: {name}")
+        source = ROOT / "prebuilt" / "esa-cert-sync" / name
+        if not source.is_file() or sha256(source.read_bytes()) != artifact.get("sha256"):
+            raise SystemExit(f"Missing or modified feed-only ESA APK: {name}")
+    return package
 
 
 def get_easytier():
@@ -900,20 +903,7 @@ def build_manifest(
         }
     )
 
-    esa_repo = "levi882/Openwrt_packages"
-    esa_version = esa_cert_sync["version"]
-    packages.append(
-        {
-            "id": "esa-cert-sync",
-            "releases": [release_ref(esa_repo, esa_cert_sync["tag"])],
-            "artifacts": [
-                file_artifact(esa_repo, esa_cert_sync["tag"],
-                              f"esa-cert-sync-{esa_version}.apk", esa_cert_sync["main_sha"]),
-                file_artifact(esa_repo, esa_cert_sync["tag"],
-                              f"luci-app-esa-cert-sync-{esa_version}.apk", esa_cert_sync["luci_sha"]),
-            ],
-        }
-    )
+    packages.append(esa_cert_sync)
 
     return {"schema_version": 1, "packages": packages}
 
@@ -968,6 +958,8 @@ def main():
             continue
         if name == "Aurora":
             print(f"{name}: theme {data['theme_tag']}, config {data['config_tag']}")
+        elif name == "ESA certificate sync":
+            print(f"{name}: {data['metadata']['version']} (feed only)")
         elif name == "SmartDNS":
             print(
                 f"{name}: daemon {data['main_tag']}, LuCI {data['luci_tag']}"

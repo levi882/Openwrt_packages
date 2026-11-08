@@ -14,9 +14,11 @@ LuCI packages where available. ESA certificate synchronization is also included
 with its LuCI page. IPTV Refresh joins automatically after its first tagged
 Release is published.
 
-ESA packages are published in this repository's `esa-cert-sync-v*` Releases.
-The release updater selects the newest published matching release and verifies
-both APK checksums. After configuring this feed, install them with:
+ESA packages are distributed only through this feed. The verified APKs are
+stored in `prebuilt/esa-cert-sync/`; the manifest pins their raw download URLs
+to the source commit and records both SHA-256 checksums. The updater preserves
+this package group without requiring or creating a GitHub Release.
+After configuring this feed, install them with:
 
 ```sh
 apk update

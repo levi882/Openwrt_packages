@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import importlib.util
 import hashlib
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -91,40 +92,60 @@ class SelectSmartdnsAssetsTests(unittest.TestCase):
 
 
 class EsaCertSyncTests(unittest.TestCase):
-    def candidate(self, version="0.1.1-r2"):
-        return release(f"esa-cert-sync-v{version}", f"esa-cert-sync-{version}.apk",
-                       f"luci-app-esa-cert-sync-{version}.apk", "SHA256SUMS")
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.source = self.root / "prebuilt" / "esa-cert-sync"
+        self.source.mkdir(parents=True)
+        source_commit = "a" * 40
+        artifacts = []
+        for name, payload in [("esa-cert-sync-0.1.1-r2.apk", b"backend"),
+                              ("luci-app-esa-cert-sync-0.1.1-r2.apk", b"frontend")]:
+            (self.source / name).write_bytes(payload)
+            artifacts.append({"type": "file", "output": name,
+                              "url": f"https://raw.githubusercontent.com/levi882/Openwrt_packages/{source_commit}/prebuilt/esa-cert-sync/{name}",
+                              "sha256": hashlib.sha256(payload).hexdigest()})
+        self.package = {"id": "esa-cert-sync", "metadata": {
+            "distribution": "feed-only", "version": "0.1.1-r2", "source_commit": source_commit},
+            "artifacts": artifacts}
+        for target, value in [("ROOT", self.root)]:
+            patcher = patch.object(UPDATER, target, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        patcher = patch.object(UPDATER, "read_manifest", return_value={"packages": [self.package]})
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
-    def test_ignores_unrelated_draft_and_prerelease_releases(self):
-        draft = dict(self.candidate("0.2.0-r1"), draft=True)
-        prerelease = dict(self.candidate("0.1.2-r1"), prerelease=True)
-        selected = UPDATER.select_esa_cert_sync_assets([
-            release("unrelated-v9.0.0"), draft, prerelease, self.candidate()])
-        self.assertEqual(selected[0]["tag_name"], "esa-cert-sync-v0.1.1-r2")
-        self.assertEqual(selected[3], "0.1.1-r2")
+    def test_preserves_feed_only_packages_without_querying_releases(self):
+        with patch.object(UPDATER, "releases_list") as listing:
+            self.assertEqual(UPDATER.get_esa_cert_sync(), self.package)
+        listing.assert_not_called()
 
-    def test_rejects_mismatched_frontend_revision_in_newest_release(self):
-        broken = release("esa-cert-sync-v0.1.2-r1", "esa-cert-sync-0.1.2-r1.apk",
-                         "luci-app-esa-cert-sync-0.1.1-r2.apk")
-        with self.assertRaises(SystemExit):
-            UPDATER.select_esa_cert_sync_assets([broken, self.candidate()])
-
-    def test_missing_release_fails_instead_of_removing_package_group(self):
-        with patch.object(UPDATER, "releases_list", return_value=[]):
-            with self.assertRaises(SystemExit):
+    def test_missing_package_fails_instead_of_silently_removing_it(self):
+        with patch.object(UPDATER, "read_manifest", return_value={"packages": []}):
+            with self.assertRaisesRegex(SystemExit, "Missing feed-only ESA"):
                 UPDATER.get_esa_cert_sync()
 
-    def test_hashes_both_selected_packages(self):
-        payloads = {"esa-cert-sync-0.1.1-r2.apk": b"backend",
-                    "luci-app-esa-cert-sync-0.1.1-r2.apk": b"frontend"}
-        with patch.object(UPDATER, "releases_list", return_value=[self.candidate()]) as listing, \
-             patch.object(UPDATER, "download_asset", side_effect=lambda a: payloads[a["name"]]):
-            result = UPDATER.get_esa_cert_sync()
-        listing.assert_called_once_with("levi882/Openwrt_packages")
-        self.assertEqual(result["tag"], "esa-cert-sync-v0.1.1-r2")
-        self.assertEqual(result["version"], "0.1.1-r2")
-        self.assertEqual(result["main_sha"], hashlib.sha256(b"backend").hexdigest())
-        self.assertEqual(result["luci_sha"], hashlib.sha256(b"frontend").hexdigest())
+    def test_modified_apk_fails_hash_validation(self):
+        (self.source / "esa-cert-sync-0.1.1-r2.apk").write_bytes(b"modified")
+        with self.assertRaisesRegex(SystemExit, "Missing or modified"):
+            UPDATER.get_esa_cert_sync()
+
+    def test_missing_apk_fails_validation(self):
+        (self.source / "esa-cert-sync-0.1.1-r2.apk").unlink()
+        with self.assertRaisesRegex(SystemExit, "Missing or modified"):
+            UPDATER.get_esa_cert_sync()
+
+    def test_cannot_drop_frontend_package(self):
+        self.package["artifacts"].pop()
+        with self.assertRaisesRegex(SystemExit, "both backend and LuCI"):
+            UPDATER.get_esa_cert_sync()
+
+    def test_rejects_unpinned_url(self):
+        self.package["artifacts"][0]["url"] = "https://example.invalid/esa.apk"
+        with self.assertRaisesRegex(SystemExit, "pinned"):
+            UPDATER.get_esa_cert_sync()
 
 
 if __name__ == "__main__":
