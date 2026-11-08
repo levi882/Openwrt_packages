@@ -83,7 +83,13 @@ else
             set -euo pipefail
             export FORCE_UNSAFE_CONFIGURE=1
             cd /sdk-cache
-            [ -f rules.mk ] || bash /builder/setup.sh
+            if [ ! -f rules.mk ]; then
+                if [ -f /builder/rules.mk ]; then
+                    cp -a /builder/. /sdk-cache/
+                else
+                    bash /builder/setup.sh
+                fi
+            fi
             RESTORE_SOURCE_ROOT=/repo SDK_DIR=/sdk-cache bash /build-local-apks.sh /output
         '
 fi

@@ -15,6 +15,7 @@ concurrency:
 
 env:
   CF_PAGES_PROJECT: openwrt-packages
+  SDK_IMAGE: ghcr.io/openwrt/sdk:x86_64-25.12.2
 
 jobs:
   build:
@@ -66,7 +67,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .openwrt-sdk-cache
-          key: openwrt-sdk-${{ env.OPENWRT_BRANCH }}-${{ env.OPENWRT_ARCH }}-rust-${{ hashFiles('rust-toolchain.toml', 'packages/overlay-restore/src/Cargo.lock') }}
+          key: openwrt-sdk-25.12.2-${{ env.OPENWRT_BRANCH }}-${{ env.OPENWRT_ARCH }}-rust-${{ hashFiles('rust-toolchain.toml', 'packages/overlay-restore/src/Cargo.lock') }}
 
       - name: build local recovery and Docker access packages
         run: bash scripts/build-local-apks.sh "bin/packages/${OPENWRT_ARCH}/${FEED_NAME}"
