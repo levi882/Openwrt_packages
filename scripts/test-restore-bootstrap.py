@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import tarfile
 import tempfile
 import unittest
 
@@ -480,6 +481,135 @@ class BootstrapTests(unittest.TestCase):
         env.update(values)
         return subprocess.run(["sh", "-c", '. "$1"; overlay_restore_mark_tool_refresh', "hook", str(HOOK)],
                               env=env, capture_output=True, text=True, timeout=15)
+
+    def run_init(self):
+        script = r'''
+procd_open_instance() { printf 'service-opened\n'; }
+procd_set_param() { printf 'service-param:%s\n' "$*"; }
+procd_close_instance() { printf 'service-registered\n'; }
+. "$1"
+start_service
+'''
+        return subprocess.run(["sh", "-c", script, "init", str(SOURCE / "init")],
+                              env=self.env, capture_output=True, text=True, timeout=15)
+
+    def test_init_repairs_missing_runner_from_retained_resources(self):
+        self.assertFalse((self.directory / "runner").exists())
+        result = self.run_init()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("service-registered", result.stdout)
+        self.assertEqual((self.directory / "runner").read_bytes(), (SOURCE / "run").read_bytes())
+        self.assertTrue((self.directory / "files.sha256").is_file())
+        self.assertEqual(self.transactions(), [])
+
+    def test_init_reports_missing_runner_instead_of_silent_success(self):
+        (self.directory / "run").unlink()
+        result = self.run_init()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn("service-registered", result.stdout)
+        self.assertIn("runner is missing", (self.directory / "boot.log").read_text())
+        self.assertEqual(self.calls(), [])
+
+    def test_init_rejects_modified_retained_signing_key(self):
+        self.assertEqual(self.run_bootstrap("setup").returncode, 0)
+        (self.directory / "myfeed.pem").write_text("modified key\n")
+        result = self.run_init()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn("service-registered", result.stdout)
+        self.assertEqual(self.calls(), [])
+
+    def test_upgrade_preflight_regenerates_all_missing_retained_resources(self):
+        packaged = self.root / "usr/libexec/overlay-restore-bootstrap"
+        packaged.parent.mkdir(parents=True)
+        packaged.write_bytes((SOURCE / "run").read_bytes())
+        resources = self.root / "usr/share/overlay-restore-bootstrap"
+        resources.mkdir(parents=True)
+        for name in ("init", "myfeed.pem"):
+            (resources / name).write_bytes((SOURCE / name).read_bytes())
+        shutil.rmtree(self.directory)
+        result = self.run_hook()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for name in ("run", "init", "myfeed.pem", "runner", "runner-init", "files.sha256", "refresh-pending"):
+            self.assertTrue((self.directory / name).is_file(), name)
+        self.assertEqual(self.transactions(), [])
+
+    def test_upgrade_aborts_when_bootstrap_cannot_be_reconstructed(self):
+        (self.directory / "run").unlink()
+        result = self.run_hook()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("firmware upgrade aborted", result.stderr)
+        self.assertFalse((self.directory / "refresh-pending").exists())
+
+    def test_upgrade_backup_builder_cannot_filter_essential_bootstrap_files(self):
+        backup_list = self.root / "sysupgrade.conffiles"
+        env = dict(self.env, COMMAND="/lib/upgrade/do_stage2", TEST="0", CONF_BACKUP_LIST="0", CONF_BACKUP="", CONF_RESTORE="")
+        script = r'''
+filtered_builder() { printf '%s\n' /etc/config/system > "$1"; }
+sysupgrade_init_conffiles=filtered_builder
+. "$1"
+for callback in $sysupgrade_init_conffiles; do "$callback" "$2"; done
+'''
+        result = subprocess.run(["sh", "-c", script, "hook", str(HOOK), str(backup_list)],
+                                env=env, capture_output=True, text=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        paths = backup_list.read_text().splitlines()
+        self.assertIn("/etc/config/system", paths)
+        for name in ("run", "init", "myfeed.pem", "runner", "runner-init", "files.sha256", "refresh-pending"):
+            self.assertIn(str(self.directory / name), paths)
+        self.assertIn(str(self.root / "etc/init.d/overlay-restore-bootstrap"), paths)
+        self.assertIn(str(self.root / "etc/rc.d/S99overlay-restore-bootstrap"), paths)
+
+    def test_failed_preflight_stops_before_a_later_successful_backup_builder(self):
+        (self.directory / "run").unlink()
+        backup_list = self.root / "sysupgrade.conffiles"
+        env = dict(self.env, COMMAND="/lib/upgrade/do_stage2", TEST="0", CONF_BACKUP_LIST="0", CONF_BACKUP="", CONF_RESTORE="")
+        script = r'''
+builder() { printf 'backup created\n' > "$1"; }
+sysupgrade_init_conffiles=builder
+. "$1"
+for callback in $sysupgrade_init_conffiles; do "$callback" "$2"; done
+'''
+        result = subprocess.run(["sh", "-c", script, "hook", str(HOOK), str(backup_list)],
+                                env=env, capture_output=True, text=True, timeout=15)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(backup_list.exists())
+
+    def test_retained_archive_bootstraps_tools_without_installed_package_resources(self):
+        (self.root / "etc/config/overlay_restore").write_text("config restore 'main'\n")
+        keep = self.root / "lib/upgrade/keep.d/overlay-restore-bootstrap"
+        keep.parent.mkdir(parents=True)
+        keep.write_text("/etc/overlay-restore-bootstrap/\n")
+        shutil.copyfile(HOOK, self.root / "lib/upgrade/zz-overlay-restore.sh")
+        backup_list = self.root / "sysupgrade.conffiles"
+        env = dict(self.env, COMMAND="/lib/upgrade/do_stage2", TEST="0", CONF_BACKUP_LIST="0", CONF_BACKUP="", CONF_RESTORE="")
+        script = '. "$1"; overlay_restore_mark_tool_refresh; : > "$2"; overlay_restore_keep_bootstrap_files "$2"'
+        result = subprocess.run(["sh", "-c", script, "hook", str(HOOK), str(backup_list)],
+                                env=env, capture_output=True, text=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        archive = self.root / "retained.tar.gz"
+        with tarfile.open(archive, "w:gz") as saved:
+            for name in backup_list.read_text().splitlines():
+                path = Path(name)
+                self.assertTrue(path.exists(), name)
+                saved.add(path, arcname=path.relative_to(self.root), recursive=False)
+        new_root = self.root / "new-firmware"
+        new_root.mkdir()
+        with tarfile.open(archive) as saved:
+            saved.extractall(new_root, filter="data")
+        shutil.copyfile(self.root / "config.json", new_root / "config.json")
+        shutil.copyfile(self.root / "etc/openwrt_release", new_root / "etc/openwrt_release")
+        boot = new_root / "proc/sys/kernel/random/boot_id"
+        boot.parent.mkdir(parents=True)
+        boot.write_text("22222222-2222-4222-8222-222222222222\n")
+        self.assertFalse((new_root / "usr/libexec/overlay-restore-bootstrap").exists())
+        retained_runner = new_root / "etc/overlay-restore-bootstrap/runner"
+        result = subprocess.run(["sh", str(retained_runner), "run"],
+                                env=dict(self.env, OVERLAY_RESTORE_BOOTSTRAP_ROOT=str(new_root)),
+                                capture_output=True, text=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((new_root / "installed-overlay-restore").is_file())
+        self.assertTrue((new_root / "installed-luci-app-overlay-restore").is_file())
+        self.assertIn("Recovery tools installed", (new_root / "etc/overlay-restore-bootstrap/boot.log").read_text())
 
     def test_keep_config_upgrade_marks_same_image_refresh_only_after_reboot(self):
         self.install_files()

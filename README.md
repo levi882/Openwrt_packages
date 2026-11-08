@@ -107,6 +107,15 @@ keys, LuCI runtime, and recovery tools are preserved. Selected packages are
 installed after reboot by a persistent `procd` worker, with a retry action for
 failed package/service work.
 
+The retained firmware-upgrade bootstrap restores the recovery tools; applying
+an application/configuration recovery plan still requires confirmation.
+Before a real keep-config upgrade, the hook regenerates and checks its retained
+scripts and signing key, then adds them after the firmware's backup-list filter.
+Incomplete bootstrap resources stop the upgrade before flashing. A missing
+startup runner is repaired from available package resources or logged as an
+error. After installing backend `0.2.0-r20` or newer, prepare the local feed again
+so its recovery tools include the updated bootstrap.
+
 Local development APKs have not been published by merely building
 them; publishing still follows the normal feed workflow.
 
