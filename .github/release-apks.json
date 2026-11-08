@@ -63,7 +63,7 @@
           "type": "file",
           "url": "https://github.com/timsaya/luci-app-bandix/releases/download/v0.12.12-r5/luci-i18n-bandix-zh-cn-26.300.03255.108369b-r5_all.apk",
           "sha256": "0dfe8b87f1f20771d8bced79c65507a86ace837edebcfea5058b78f7b2a2bd84",
-          "output": "luci-i18n-bandix-zh-cn-26.300.03255.108369b-r5.apk"
+          "output": "luci-i18n-bandix-zh-cn-26.300.03255~108369b-r5.apk"
         }
       ]
     },
@@ -199,27 +199,27 @@
       "releases": [
         {
           "repository": "levi882/luci-app-lucky",
-          "tag": "v3.4.0"
+          "tag": "v3.7.1"
         }
       ],
       "artifacts": [
         {
           "type": "file",
-          "url": "https://github.com/levi882/luci-app-lucky/releases/download/v3.4.0/lucky-3.4.0-r1_x86_64.apk",
-          "sha256": "f60d3bbd360e409b9b3dbedbec6f81ca665271721925e180538a49fda4604bf8",
-          "output": "lucky-3.4.0-r1.apk"
+          "url": "https://github.com/levi882/luci-app-lucky/releases/download/v3.7.1/lucky-3.7.1-r3_x86_64.apk",
+          "sha256": "4e3c7bc7f7f8c7f375d92c7401fee319ccf85db2b025647bcec8ceb5bfb9dae0",
+          "output": "lucky-3.7.1-r3.apk"
         },
         {
           "type": "file",
-          "url": "https://github.com/levi882/luci-app-lucky/releases/download/v3.4.0/luci-app-lucky-2.2.2-r4_x86_64.apk",
-          "sha256": "23fcdd607d05da3cba26b397672e8b8a38745f7166fd0a10bfac570f63ed1387",
-          "output": "luci-app-lucky-2.2.2-r4.apk"
+          "url": "https://github.com/levi882/luci-app-lucky/releases/download/v3.7.1/luci-app-lucky-2.2.2-r3_x86_64.apk",
+          "sha256": "2e019ad2e6098cc3f5fd230b723f3b6501a2d2f623618cd126ec9716026b6fbe",
+          "output": "luci-app-lucky-2.2.2-r3.apk"
         },
         {
           "type": "file",
-          "url": "https://github.com/levi882/luci-app-lucky/releases/download/v3.4.0/luci-i18n-lucky-zh-cn-2.2.2-r4_x86_64.apk",
-          "sha256": "2634961680ef18f7d539053acf5a7ab8313e669e4ce24f1767492d054cadd366",
-          "output": "luci-i18n-lucky-zh-cn-2.2.2-r4.apk"
+          "url": "https://github.com/levi882/luci-app-lucky/releases/download/v3.7.1/luci-i18n-lucky-zh-cn-2.2.2-r3_x86_64.apk",
+          "sha256": "f9d7a099e74cba8138491aeec72c29e50c8f42322756c8e84cb2dd5a92881648",
+          "output": "luci-i18n-lucky-zh-cn-2.2.2-r3.apk"
         }
       ]
     },
@@ -228,7 +228,7 @@
       "releases": [
         {
           "repository": "levi882/OpenWrt-nikki",
-          "tag": "v1.26.2"
+          "tag": "v1.26.2-mihomo-1.19.33"
         }
       ],
       "metadata": {
@@ -238,27 +238,27 @@
         {
           "type": "archive",
           "format": "tar.gz",
-          "url": "https://github.com/levi882/OpenWrt-nikki/releases/download/v1.26.2/nikki_x86_64-openwrt-25.12.tar.gz",
-          "sha256": "53eae46107b28e9be26cd2da41ad5c4b01c2cde24307872faa7a51c0d5695cb6",
+          "url": "https://github.com/levi882/OpenWrt-nikki/releases/download/v1.26.2-mihomo-1.19.33/nikki_x86_64-openwrt-25.12.tar.gz",
+          "sha256": "9d28a730c50327a33366e3d89129dcd137bd915b9caa4089bce493a7d04dece6",
           "files": [
             {
               "source": "luci-app-nikki-1.26.2-r5.apk",
-              "sha256": "db5dadd2b7d516e031c76b046047459e150eb9f9bb34a5c2a4f650912a6dd9dc",
+              "sha256": "901a46697a140c552e123c7d6e44ab529d9918afaeaca84c435c42076076fca4",
               "output": "luci-app-nikki-1.26.2-r5.apk"
             },
             {
-              "source": "luci-i18n-nikki-zh-cn-26.287.50886~e7af522.apk",
-              "sha256": "0b6a00250f2a1e3032d40e664e62d7998f4499db7a049630ee15569b3eea58b4",
-              "output": "luci-i18n-nikki-zh-cn-26.287.50886~e7af522.apk"
+              "source": "luci-i18n-nikki-zh-cn-26.226.24813~565cd29.apk",
+              "sha256": "ae91858fed389c18c23e940fbdd4f03ee1455927b4aa609d7fec0f7907517cfc",
+              "output": "luci-i18n-nikki-zh-cn-26.226.24813~565cd29.apk"
             },
             {
-              "source": "mihomo-meta-1.19.32.apk",
-              "sha256": "743a1bf58b79d99fd25c993042cd2bf1fd5f26b3b6fe52003122dd86c9d3dc99",
-              "output": "mihomo-meta-1.19.32.apk"
+              "source": "mihomo-meta-1.19.33.apk",
+              "sha256": "b7be48763caf1d5a28bfa3807d1f9aae4191d853bd93991b317723049838e9f0",
+              "output": "mihomo-meta-1.19.33.apk"
             },
             {
               "source": "nikki-2026.10.10-r8.apk",
-              "sha256": "c3c152670061de23187de019739e5f5a46ad8df42148e8e60d4e926d15e10f37",
+              "sha256": "b744254aec3f9965a090b6a10d1297e34ec807514619512f4da9a6728d0be6d3",
               "output": "nikki-2026.10.10-r8.apk"
             }
           ]
@@ -299,25 +299,25 @@
       "releases": [
         {
           "repository": "PikuZheng/smartdns",
-          "tag": "1.2026.v48.4.1_with_ui"
+          "tag": "1.2026.v48.4.3_with_ui"
         },
         {
           "repository": "PikuZheng/smartdns",
-          "tag": "1.2026.v48.4.1"
+          "tag": "1.2026.v48.4.3"
         }
       ],
       "artifacts": [
         {
           "type": "file",
-          "url": "https://github.com/PikuZheng/smartdns/releases/download/1.2026.v48.4.1_with_ui/smartdns.1.2026.v48.4.1.x86_64.apk",
-          "sha256": "9d5326ec18dae2299fd98012cdd9526fea776715d6779a3f45a6369839c55d55",
-          "output": "smartdns-1.2026.v48.4.1.apk"
+          "url": "https://github.com/PikuZheng/smartdns/releases/download/1.2026.v48.4.3_with_ui/smartdns.1.2026.v48.4.3.x86_64.apk",
+          "sha256": "c2dd91e2c5556037735381669c979c82f124f61b7af0a569f8e05316f889b6b2",
+          "output": "smartdns-1.2026.v48.4.3.apk"
         },
         {
           "type": "file",
-          "url": "https://github.com/PikuZheng/smartdns/releases/download/1.2026.v48.4.1/luci-app-smartdns.1.2026.v48.4.1.luci-all.apk",
-          "sha256": "d7db1cfba12309803dca30daf49b03e7e1efae0b12be11780278b370fac05f39",
-          "output": "luci-app-smartdns-1.2026.v48.4.1.apk"
+          "url": "https://github.com/PikuZheng/smartdns/releases/download/1.2026.v48.4.3/luci-app-smartdns.1.2026.v48.4.3.luci-all.apk",
+          "sha256": "70b51892e2209ed39f5a20eb716a067d53e6a2f15a4c8ca503d6be9d062b7de2",
+          "output": "luci-app-smartdns-1.2026.v48.4.3.apk"
         }
       ]
     },
