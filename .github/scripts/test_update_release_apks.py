@@ -79,6 +79,33 @@ class SelectSmartdnsAssetsTests(unittest.TestCase):
         )
         self.assertEqual(version, "1.2026.v48.4.1")
 
+    def test_selects_renamed_webui_daemon_with_matching_luci(self):
+        releases = [
+            release(
+                "1.2026.v48.4.11_with_ui",
+                "smartdns_with_ui.1.2026.v48.4.11.x86_64.apk",
+            ),
+            release(
+                "1.2026.v48.4.10_with_ui",
+                "smartdns_with_ui.1.2026.v48.4.10.x86_64.apk",
+            ),
+            release(
+                "1.2026.v48.4.10",
+                "luci-app-smartdns.1.2026.v48.4.10.luci-all.apk",
+            ),
+        ]
+
+        self.assertEqual(
+            UPDATER.select_smartdns_assets(releases),
+            (
+                releases[1],
+                releases[1]["assets"][0],
+                releases[2],
+                releases[2]["assets"][0],
+                "1.2026.v48.4.10",
+            ),
+        )
+
     def test_rejects_static_openwrt_daemon(self):
         releases = [
             release(
