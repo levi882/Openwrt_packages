@@ -376,7 +376,7 @@ def select_smartdns_assets(releases):
             # static executable and cannot load smartdns_ui.so when a restored
             # configuration has the built-in WebUI enabled.
             match = re.fullmatch(
-                r"smartdns\.(?P<version>.+)\.x86_64\.apk",
+                r"smartdns(?:_with_ui)?\.(?P<version>.+)\.x86_64\.apk",
                 main["name"],
             )
             if not match:
